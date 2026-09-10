@@ -1,1 +1,59 @@
-TBD
+Title: Any authenticated user can enumerate every account and read administrator-set user attributes via INFORMATION_SCHEMA.USER_ATTRIBUTES
+
+Weakness: Missing Authorization (CWE-862)
+
+Asset in Scope: TiDB product, such as TiKV, TiDB, TiFlash, PD
+
+Description:
+SUMMARY
+
+TiDB lets administrators attach free-form metadata to accounts with ALTER USER ... ATTRIBUTE / COMMENT - deployment practice includes ownership contacts, environment notes, and references to secrets managers. MySQL, which TiDB mirrors here, only shows this table's rows to users who can read the underlying privilege tables.
+
+In TiDB v26.3.10, a user with literally zero grants selects every row of INFORMATION_SCHEMA.USER_ATTRIBUTES and reads all usernames, hosts, and attribute JSON of all accounts - including an admin-set attribute {"owner":"finance-oncall","vault_ref":"kv/prod/payments/api-key"} in the verification - while the same user's direct read of mysql.user is denied with ERROR 1142. Account enumeration plus admin annotations is disclosed across the whole cluster.
+
+AFFECTED PRODUCT
+
+- Product: TiDB (tidb-server)
+- Component: INFORMATION_SCHEMA table USER_ATTRIBUTES (pkg/executor/infoschema_reader.go)
+- Version tested: v26.3.10, commit 6b4c9f9dce2118aca580a16ef49bd791f4e12b3a (binary built from the pinned source; ./bin/tidb-server -V prints "v26.3.10-dirty", Git Commit Hash 6b4c9f9dce2118aca580a16ef49bd791f4e12b3a)
+- Environment used for verification: single-node local lab, unistore storage, MySQL protocol on 127.0.0.1:4100
+
+VULNERABILITY DETAILS
+
+- Vulnerability class: missing authorization check on an INFORMATION_SCHEMA retriever
+- Required privileges: any authenticated user; the reading account held GRANT USAGE ON *.* only
+- Entry point: SELECT * FROM INFORMATION_SCHEMA.USER_ATTRIBUTES
+- Trust boundary crossed: privilege tables (mysql.user) -> any authenticated user
+- Root location: setDataForUserAttributes in https://github.com/pingcap/tidb/blob/6b4c9f9dce2118aca580a16ef49bd791f4e12b3a/pkg/executor/infoschema_reader.go#L378-L407 runs an internal privilege-free query on mysql.user and appends every row with no per-row filter; enabled by the blanket INFORMATION_SCHEMA grant bypass in https://github.com/pingcap/tidb/blob/6b4c9f9dce2118aca580a16ef49bd791f4e12b3a/pkg/privilege/privileges/privileges.go#L184-L199
+- Measured effect: zero-grant user read all accounts on the server with their ATTRIBUTE JSON
+
+ROOT CAUSE
+
+- setDataForUserAttributes runs "SELECT user, host, JSON_UNQUOTE(JSON_EXTRACT(user_attributes,'$.metadata')) FROM mysql.user" through the internal (privilege-free) SQL channel and appends every row for every user, with no RequestVerification filter and no self-row restriction.
+- INFORMATION_SCHEMA SELECT bypasses grants by design (privileges.go:184-199), so retrievers must filter rows themselves; this retriever does not, unlike processlist/slow-query which gate on PROCESS.
+
+REPRODUCTION STEPS
+
+1. Admin (setup, own test data): CREATE USER 'payments_svc'@'%' ...; ALTER USER 'payments_svc'@'%' ATTRIBUTE '{"owner":"finance-oncall","vault_ref":"kv/prod/payments/api-key"}';
+2. Attacker: SELECT * FROM INFORMATION_SCHEMA.USER_ATTRIBUTES;
+3. Compare with the denied direct read: SELECT user, host FROM mysql.user;
+
+OBSERVED RESULT
+
+USER / HOST / ATTRIBUTE for every account on the server, including:
+payments_svc | % | {"owner": "finance-oncall", "vault_ref": "kv/prod/payments/api-key"}
+
+The attacker holds GRANT USAGE ON *.* only. Negative control in the same window: "SELECT user, host FROM mysql.user" returns "ERROR 1142 (42000): SELECT command denied" for the same user - the privilege table itself is protected; only the INFORMATION_SCHEMA mirror leaks all rows.
+
+Evidence transcripts (2026-09-07 re-verification against the pinned build: admin attribute setup, zero-grant enumeration of all accounts, denied direct read of mysql.user): (See the proof-of-concept files included in this folder.)
+
+Impact:
+Full account enumeration (usernames and host patterns, useful for credential attacks against specific accounts) plus disclosure of administrator-set attribute/comment JSON across all accounts. Attributes are free-form; in the verification they contained an internal owner contact and a vault path reference.
+
+- Attacker: any authenticated SQL user, including one holding only GRANT USAGE ON *.* (no object privileges). No victim interaction and no special server state required; works on default configuration.
+- Outcome: complete listing of every account (username + host) on the cluster and verbatim read of the ATTRIBUTE JSON administrators attached to those accounts. In the verification the attribute contained an internal ownership contact and a secrets-vault path reference; attributes are free-form, so whatever operators store there is disclosed.
+- Preconditions on the target: none beyond a populated mysql.user; the disclosure requires no non-default configuration.
+- Evidence limits: metadata exposure only - password hashes are not included in this table and were not exposed; the read is bounded to account names, hosts, and the attribute/comment JSON, not arbitrary table data. Demonstrated on a single-node lab.
+
+Proof of Concept:
+(See the proof-of-concept files included in this folder.)

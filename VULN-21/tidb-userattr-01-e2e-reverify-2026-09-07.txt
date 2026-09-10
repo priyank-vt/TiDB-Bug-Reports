@@ -1,0 +1,16 @@
+########## TIDB-IS-USERATTR-01 fresh E2E 2026-09-07T12:02:37Z
+--- setup (admin, own test data) ---
+setup_exit=0
+--- negative control: zerogrant reads mysql.user ---
+--------------
+SELECT user, host FROM mysql.user
+--------------
+
+ERROR 1142 (42000) at line 1: SELECT command denied to user 'zerogrant'@'%' for table 'user'
+--- exploit: zerogrant reads INFORMATION_SCHEMA.USER_ATTRIBUTES ---
+USER	HOST	ATTRIBUTE
+root	%	NULL
+zerogrant	%	NULL
+u1	%	NULL
+u2	%	NULL
+payments_svc	%	{"owner": "finance-oncall", "vault_ref": "kv/prod/payments/api-key"}
