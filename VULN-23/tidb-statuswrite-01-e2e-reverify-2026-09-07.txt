@@ -1,0 +1,15 @@
+########## TIDB-STATUS-WRITE-01 fresh E2E 2026-09-07T12:04:28Z
+--- 1. baseline GOGC read (anonymous) ---
+500
+--- 2. unauthenticated write 42 ---
+[HTTP 200]
+read-back: 500
+--- 3. write 100 (observed to stick in prior session) ---
+[HTTP 200]
+read-back: 100
+--- 4. DDL owner resign (anonymous) ---
+"success!" [HTTP 200]
+--- 5. negative control: /upgrade/pause input validation ---
+wrong operation:pause [HTTP 400]
+--- 6. server health after writes ---
+{"connections":0,"version":"8.0.11-TiDB-v26.3.10-dirty","git_hash":"6b4c9f9dce2118aca580a16ef49bd791f4e12b3a","status":{"init_stats_percentage":0}}

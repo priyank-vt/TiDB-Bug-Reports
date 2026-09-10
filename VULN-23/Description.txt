@@ -1,1 +1,64 @@
-TBD
+Title: Status API accepts unauthenticated state-changing POSTs (runtime GOGC write, DDL owner resignation)
+
+Weakness: Missing Authentication for Critical Function (CWE-306)
+
+Asset in Scope: TiDB product, such as TiKV, TiDB, TiFlash, PD
+
+Description:
+SUMMARY
+
+The same unauthenticated HTTP status API that serves monitoring pages also registers write endpoints: POST /debug/gogc changes the Go garbage-collection target of the running process, and POST /ddl/owner/resign forces the DDL owner role of the node to resign. Both are operational/administrative actions that a database normally reserves for operators.
+
+Both were exercised anonymously against the pinned build: the GOGC endpoint accepted "POST 42" with HTTP 200 (and a later "POST 100" was observed to change the reported value from 500 to 100), and /ddl/owner/resign returned HTTP 200 "success!" with no credentials. Measured impact in the lab was limited: TiDB's internal GC tuner overwrote the injected 42 back to 500 before the next read, so a persistent sabotage value was not demonstrated, and the DDL owner re-election recovers on its own. The defect is that these state-changing operations require no authentication at all.
+
+AFFECTED PRODUCT
+
+- Product: TiDB (tidb-server)
+- Component: HTTP status API write endpoints (pkg/server/http_status.go)
+- Version tested: v26.3.10, commit 6b4c9f9dce2118aca580a16ef49bd791f4e12b3a (binary built from the pinned source; ./bin/tidb-server -V prints "v26.3.10-dirty", Git Commit Hash 6b4c9f9dce2118aca580a16ef49bd791f4e12b3a)
+- Environment used for verification: single-node local lab, unistore storage, status API on 127.0.0.1:10180
+
+VULNERABILITY DETAILS
+
+- Vulnerability class: missing authentication on state-changing management endpoints
+- Required privileges: none - plain HTTP POST, no credentials
+- Entry point: POST /debug/gogc (body: integer), POST /ddl/owner/resign
+- Trust boundary crossed: unauthenticated network peer -> server runtime/DDL ownership state
+- Root location: https://github.com/pingcap/tidb/blob/6b4c9f9dce2118aca580a16ef49bd791f4e12b3a/pkg/server/http_status.go - router.HandleFunc("/debug/gogc", ...) (POST branch calls util.SetGOGC) and router.Handle("/ddl/owner/resign", tikvhandler.NewDDLResignOwnerHandler(...)); no auth middleware on the router
+- Measured effect: POST /debug/gogc -> HTTP 200, value accepted; POST /ddl/owner/resign -> HTTP 200 "success!". In the same transcript the injected value 42 read back as 500 (internal GC tuner override), while a later POST of 100 was observed to stick (read-back 100, changed from 500).
+
+ROOT CAUSE
+
+- The status router registers these handlers without any authentication or authorization wrapper; anything that can reach the port can invoke them.
+- /ddl/owner/resign performs a cluster-role action (resign DDL ownership) directly on GET/POST without a token or operator credential.
+- The GOGC write competes with TiDB's internal gctuner (https://github.com/pingcap/tidb/blob/6b4c9f9dce2118aca580a16ef49bd791f4e12b3a/pkg/util/gctuner/tuner.go), which adjusts GOGC dynamically; this limits the demonstrated persistence of the write but does not gate the endpoint itself.
+
+REPRODUCTION STEPS
+
+1. curl http://<host>:10080/debug/gogc - read current value (observed 500).
+2. curl -X POST -d '42' http://<host>:10080/debug/gogc - HTTP 200, empty body.
+3. curl http://<host>:10080/debug/gogc - read back (observed 500; internal tuner override). Then curl -X POST -d '100' and read back - observed 100.
+4. curl -X POST http://<host>:10080/ddl/owner/resign - observed "success!", HTTP 200.
+
+OBSERVED RESULT
+
+POST /ddl/owner/resign  -> "success!" [HTTP 200]
+POST /debug/gogc (42)   -> [HTTP 200]
+GET  /debug/gogc        -> 500   (value written by tuner; injected 42 not persisted)
+POST /debug/gogc (100)  -> [HTTP 200]
+GET  /debug/gogc        -> 100
+
+Negative control: POST /upgrade/pause on the same API returns "wrong operation:pause" [HTTP 400] - the server does validate the operation name on some endpoints - while the two exploited endpoints perform their action for any anonymous caller.
+
+Evidence transcripts (2026-09-07 re-verification against the pinned build: baseline GOGC read, anonymous writes 42 and 100, read-backs, DDL owner resignation, /upgrade/pause control, server health after writes): (See the proof-of-concept files included in this folder.)
+
+Impact:
+Any network peer can trigger operational actions on a TiDB node without credentials: force a DDL owner resignation (verified: re-election recovers; a transient DDL stall is the effect on the same node) and write runtime GC parameters (verified accepted; persistence is governed by the internal GC tuner).
+
+- Attacker: an unauthenticated network peer. No account, no privileges, no user interaction; only TCP reachability of the status port (10080 by default).
+- Outcome: anonymous execution of operator-grade actions - forcing the node's DDL owner role to resign (HTTP 200 "success!") and changing the process GC target (write accepted; observed read-back change 500 -> 100). The demonstrated availability effect was transient: DDL ownership re-election recovers on its own, and the GOGC value is adjusted by TiDB's internal tuner.
+- Preconditions on the target: none - default configuration.
+- Evidence limits: no deterministic outage is claimed from these two endpoints; the injected GOGC 42 was overwritten by the internal tuner before the next read, while a later write of 100 was observed to persist. Demonstrated on a single-node lab; cluster-level DDL scheduling effects across multiple TiDB nodes were not measured.
+
+Proof of Concept:
+(See the proof-of-concept files included in this folder.)
