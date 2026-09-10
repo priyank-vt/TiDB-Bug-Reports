@@ -1,1 +1,60 @@
-TBD
+Title: Debug and Diagnostics gRPC services on tikv-server expose stored values, MVCC histories, logs and cluster metadata without authentication
+
+Weakness: Missing Authentication for Critical Function (CWE-306)
+
+Asset in Scope: TiDB product, such as TiKV, TiDB, TiFlash, PD
+
+Description:
+Debug and Diagnostics gRPC services on tikv-server expose stored values, MVCC histories, logs and cluster metadata without authentication.
+
+SUMMARY
+TiKV registers a Debug service and a Diagnostics service on the same gRPC port as its data API. These are operator interfaces: reading raw values from any column family, streaming the full MVCC version history (including values) of keys, dumping server log contents, and reporting cluster metadata. A reader would expect such interfaces to be gated behind authentication, or at minimum absent from an unauthenticated deployment.
+
+They are not. Any unauthenticated network peer can call them. Measured outcome: Debug/Get returned the stored value of an attacker-chosen key ("TOPSECRET-v12-9d41"), Debug/ScanMvcc streamed a key's complete MVCC history including the committed value, Debug/GetClusterInfo returned the cluster id, and Diagnostics/search_log streamed the server's internal log lines back to the client.
+
+AFFECTED PRODUCT
+- Product: TiKV
+- Version tested: 8.5.8, commit a1fdd6a59bb9c8a282c15677e1894501a52425cf (built from that source; default configuration — no TLS, no authentication)
+- Environment: isolated local lab — one pd-server built from the pinned PD sources plus one tikv-server, loopback only; client = grpcurl with the kvproto definitions this version pins (kvproto @ 07aa8c6)
+
+VULNERABILITY DETAILS
+- Weakness: missing authentication on sensitive information interfaces (CWE-306 Missing Authentication for Critical Function); information exposure (CWE-200)
+- Required privileges: none
+- Entry points: debugpb.Debug/Get, Debug/ScanMvcc, Debug/GetClusterInfo, Debug/GetRegionProperties, Debug/GetMetrics; diagnosticspb.Diagnostics/search_log, Diagnostics/server_info
+- Trust boundary crossed: unauthenticated network peer → storage engine internals / operator tooling
+- Root cause: the Debug/Diagnostics handlers perform no authorization — no TLS client identity check, no cluster-id comparison (the guard some KV handlers use is absent here), no operator allow-list. Both services are registered unconditionally on the main peer port (components/server/src/server.rs, create_debug / create_diagnostics). Handler source: https://github.com/tikv/tikv/blob/a1fdd6a59bb9c8a282c15677e1894501a52425cf/src/server/service/debug.rs
+- Measured unsafe effect: cross-key stored-value disclosure, full MVCC history disclosure (values + timestamps), server-log disclosure, cluster metadata disclosure
+
+REPRODUCTION
+1. Seed a secret through the ordinary data API: RawPut key "v12secretkey", value "TOPSECRET-v12-9d41" (context: region 8, peer 9).
+2. Debug/Get with {"db":"KV","cf":"default","key":"enYxMnNlY3JldGtleQ=="} (base64 of "zv12secretkey"; raw keys are stored under a 'z' prefix — verified empirically)
+   → {"value": "VE9QU0VDUkVULXYxMi05ZDQx"}  (= "TOPSECRET-v12-9d41")
+3. Debug/ScanMvcc with {"from_key":"","to_key":"","limit":10} (empty bounds = arbitrary keys, no key names needed)
+   → {"key":"emlzbzQAAAAA+w==","info":{"writes":[{"startTs":"100","commitTs":"1","shortValue":"UEFTVENPTU1JVC12MTY="}]}}  (value = "PASTCOMMIT-v16")
+4. Debug/GetClusterInfo with {} → {"clusterId": "7682295227016422839"}
+5. Diagnostics/search_log with {"patterns":["TiKV is ready to serve"],"target":"Normal"} → streamed log lines including [server.rs:422] ["TiKV is ready to serve"]
+
+Recorded outputs for every step are in the PoC gist.
+
+NEGATIVE CONTROL
+Debug/InjectFailPoint was accepted-and-inert on this build (fail-points compiled out), and a mismatched cluster_id on handlers that do implement the check was rejected — the disclosure is specific to the unauthenticated Debug/Diagnostics surface, not a general mis-test.
+
+Note: no testing was performed against any live infrastructure; all reproduction was on an isolated local lab built from the pinned sources. The seeded key was test data created by the audit itself.
+
+Impact:
+Any network peer that can reach tikv-server's gRPC port can, without credentials:
+- read the stored value of any key it can name (Debug/Get) — demonstrated by reading back a seeded secret value verbatim;
+- stream the complete MVCC write history of keys with empty bounds (Debug/ScanMvcc) — timestamps plus committed values, without needing to know key names in advance; this is cross-key and cross-application data at the storage layer, below any SQL-level authorization;
+- harvest the cluster id (Debug/GetClusterInfo), which is the identifier other RPCs use for their cluster membership check;
+- dump server log contents (Diagnostics/search_log), which contain keys and operational metadata, and read hardware/OS details (Diagnostics/server_info).
+
+Measured outcome quoted from the recorded evidence: Debug/Get returned {{"value":"VE9QU0VDUkVULXYxMi05ZDQx"}} for the seeded key; Debug/ScanMvcc returned {{"startTs":"100","commitTs":"1","shortValue":"UEFTVENPTU1JVC12MTY="}} for a key written through the ordinary API; search_log returned the server's own log lines.
+
+Evidence limits: demonstrated in an isolated local lab on test data; on a real deployment the same interfaces read production user data. No integrity or availability impact is claimed for this finding.
+
+Severity: CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N = 7.5 (High) — program criteria: "Unauthorized access to sensitive information" / authentication bypass to sensitive data = High.
+
+Remediation: gate Debug/Diagnostics behind mTLS client-identity authorization (security.cert-allowed-cn) or remove them from unauthenticated deployments; at minimum enforce cluster-id validation and an operator allow-list of source addresses for these services.
+
+Proof of Concept:
+(See the proof-of-concept files included in this folder.)

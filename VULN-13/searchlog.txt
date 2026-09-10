@@ -1,0 +1,57 @@
+search_log: {
+  "messages": [
+    {
+      "time": "1788764974537",
+      "level": "Info",
+      "message": "[server.rs:422] [\"TiKV is ready to serve\"] [thread_id=1]"
+    },
+    {
+      "time": "1788765208075",
+      "level": "Info",
+      "message": "[server.rs:422] [\"TiKV is ready to serve\"] [thread_id=1]"
+    }
+  ]
+}
+
+
+server_info: {
+  "items": [
+    {
+      "tp": "cpu",
+      "name": "cpu",
+      "pairs": [
+        {
+          "key": "cpu-logical-cores",
+          "value": "24"
+        },
+        {
+          "key": "cpu-physical-cores",
+          "value": "16"
+        },
+        {
+          "key": "cpu-frequency",
+          "value": "0MHz"
+        },
+        {
+          "key": "cpu-vendor-id",
+          "value": "GenuineIntel"
+        },
+        {
+          "key": "cpu-arch",
+          "value": "amd64"
+        },
+        {
+          "key": "l1-cache-size",
+          "value": "32768"
+        },
+        {
+          "key": "l1-cache-line-size",
+          "value": "64"
+        },
+        {
+          "key": "l2-cache-size",
+          "value": "2097152"
+        },
+        {
+          "key": "l2-cache-line-size",
+         
