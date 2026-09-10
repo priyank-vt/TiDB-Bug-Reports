@@ -1,1 +1,55 @@
-TBD
+Title: ResolveLockLite accepts a commit timestamp below the transaction start timestamp, breaking snapshot isolation
+
+Weakness: Improper Input Validation (CWE-20)
+
+Asset in Scope: TiDB product, such as TiKV, TiDB, TiFlash, PD
+
+Description:
+ResolveLockLite accepts a commit timestamp below the transaction start timestamp, breaking snapshot isolation.
+
+SUMMARY
+TiKV's transaction protocol guarantees snapshot isolation: a transaction that starts at timestamp start_ts must only become visible at a commit timestamp greater than start_ts, so readers never see a transaction already committed inside their own past. The Commit command enforces commit_ts > start_ts; the multi-key ResolveLock path enforces commit_ts > lock.ts.
+
+The lightweight single-key variant (ResolveLock with an explicit key list) enforces neither: the client-supplied commit_version is passed straight into the commit action. An unauthenticated client can therefore prewrite a key at start_ts = 100, then resolve it with commit_ts = 1, creating a committed write record at timestamp 1 that is visible to every reader with a snapshot at or above 1 — including snapshots older than the transaction itself.
+
+AFFECTED PRODUCT
+- Product: TiKV
+- Version tested: 8.5.8, commit a1fdd6a59bb9c8a282c15677e1894501a52425cf (built from that source; default configuration — no TLS, no authentication)
+- Environment: isolated local lab — one pd-server built from the pinned PD sources plus one tikv-server, loopback only; client = grpcurl with the kvproto definitions this version pins (kvproto @ 07aa8c6); the attacker used only its own key
+
+VULNERABILITY DETAILS
+- Weakness: improper validation of a timestamp leading to transactional history corruption (CWE-20 Improper Input Validation), manifesting as a snapshot-isolation violation
+- Required privileges: none (ordinary unauthenticated API access)
+- Entry point: tikvpb.Tikv/KvResolveLock with a non-empty keys list (lite branch)
+- Trust boundary crossed: unauthenticated client → MVCC transactional invariants
+- Root cause: src/storage/txn/commands/resolve_lock_lite.rs:74-79 passes the client-supplied commit_ts straight into commit(); contrast the guard in the Commit command (https://github.com/tikv/tikv/blob/a1fdd6a59bb9c8a282c15677e1894501a52425cf/src/storage/txn/commands/commit.rs#L66-L70 rejects commit_ts <= lock_ts with InvalidTxnTso) and in the multi-key ResolveLock write phase (resolve_lock.rs:104 requires commit_ts > current_lock.ts) — the lite branch has neither
+- Measured unsafe effect: a write committed at commit_ts < start_ts, visible to old-snapshot reads; MVCC record shows startTs = 100, commitTs = 1
+
+REPRODUCTION
+1. KvPrewrite with start_version = 100, one Put mutation on the attacker's key (base64 "aXNvNA==" = "iso4"), value "UEFTVENPTU1JVC12MTY=" = "PASTCOMMIT-v16" (context: region 4, peer 5).
+2. KvResolveLock with start_version = 100, commit_version = 1, keys = ["aXNvNA=="] — succeeds.
+3. KvGet for that key with version = 5 (a snapshot from the transaction's own past).
+   → {"value": "UEFTVENPTU1JVC12MTY="}   # the value written by the start_ts=100 transaction is visible at version 5
+4. Independent corroboration — unauthenticated Debug/ScanMvcc with empty bounds:
+   → {"key":"emlzbzQAAAAA+w==","info":{"writes":[{"startTs":"100","commitTs":"1","shortValue":"UEFTVENPTU1JVC12MTY="}]}}
+The MVCC record itself shows the impossible ordering (start 100 → commit 1). Steps 1 and 2 returned success responses.
+
+NEGATIVE CONTROL
+The equivalent transition through KvCommit is rejected with InvalidTxnTso when commit_ts <= start_ts (guard cited from source at commit.rs:66-70), isolating the missing guard in the lite path as the defect.
+
+Note: no testing was performed against any live infrastructure; all reproduction was on an isolated local lab built from the pinned sources, using only the attacker's own test key.
+
+Impact:
+An unauthenticated client can manufacture committed write records in the arbitrary past of the timestamp order:
+- old-snapshot readers (TiDB stale reads, long-running transactions, incremental consumers) observe data that did not exist in their snapshot — demonstrated: a read at version 5 returned the value written by a transaction that started at timestamp 100 and was committed at timestamp 1;
+- a future legitimate write at a colliding timestamp on the same key is silently overwritten (the corrupted record occupies commit_ts = 1);
+- the corrupted MVCC history is independently confirmed by the unauthenticated ScanMvcc read: {"startTs":"100","commitTs":"1","shortValue":"UEFTVENPTU1JVC12MTY="}.
+
+Evidence limits: demonstrated in an isolated local lab where the attacker used only its own test key; on a real cluster the same API operates on whatever locks exist, so the history corruption is not inherently confined to attacker-owned keys, but cross-key exploitation was not demonstrated and is not claimed. No availability impact is claimed.
+
+Severity: CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:H/A:N = 7.5 (High) — unauthenticated, deterministic integrity violation of the core transactional guarantee, demonstrated end-to-end including the corrupted history record.
+
+Remediation: in the lite resolve path (src/storage/txn/commands/resolve_lock_lite.rs:74-79), enforce commit_ts > lock.start_ts, mirroring the Commit command's InvalidTxnTso check; add a regression test where ResolveLock with keys=[...] and commit_ts <= start_ts must error.
+
+Proof of Concept:
+(See the proof-of-concept files included in this folder.)

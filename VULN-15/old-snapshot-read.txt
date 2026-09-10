@@ -1,0 +1,41 @@
+prewrite@100: {
+  "execDetailsV2": {
+    "timeDetail": {
+      "totalRpcWallTimeNs": "70884477"
+    },
+    "scanDetailV2": {
+      "getSnapshotNanos": "8060757"
+    },
+    "writeDetail": {
+      "storeBatchWaitNanos": "258679",
+      "persistLogNanos": "4019611",
+      "raftDbWriteLeaderWaitNanos": "2364",
+      
+resolve_lite commit@1: {
+  "execDetailsV2": {
+    "timeDetail": {
+      "totalRpcWallTimeNs": "30724633"
+    },
+    "scanDetailV2": {
+      "getSnapshotNanos": "768987"
+    },
+    "writeDetail": {
+      "storeBatchWaitNanos": "255404",
+      "persistLogNanos": "4105756",
+      "raftDbWriteLeaderWaitNanos": "2879",
+      "
+get@version5 (old snapshot): {
+  "value": "UEFTVENPTU1JVC12MTY=",
+  "execDetailsV2": {
+    "timeDetail": {
+      "waitWallTimeMs": "17",
+      "processWallTimeMs": "3",
+      "kvReadWallTimeMs": "21",
+      "totalRpcWallTimeNs": "21595770"
+    },
+    "scanDetailV2": {
+      "processedVersions": "1",
+      "totalVersions": "1",
+      "processedVersionsSize": "23",
+      "getSnapshotNanos": "1313458",
+      "readPoolScheduleWai
