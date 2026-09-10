@@ -1,0 +1,13 @@
+=== TIDB-DEBUGPAGES-01 E2E retest 2026-09-05T21:50:42-05:00 ===
+--- [negative control] same data via SQL requires CONFIG privilege ---
+ERROR 1227 (42000) at line 1: Access denied; you need (at least one of) the CONFIG privilege(s) for this operation
+--- anonymous HTTP /config (first 300 bytes) ---
+{"host":"127.0.0.1","advertise-address":"127.0.0.1","port":4100,"cors":"","store":"unistore","path":"<lab>/data","socket":"/tmp/tidb-4100.sock","lease":"45s","split-table":true,"token-limit":1000,"temp-dir":"/tmp/tidb","tmp-storage-path":"/tmp/1000_tidb/MTI3LjAuMC4xOjQxMDAvMC4wLjAuMDoxMDE4MA
+--- anonymous /settings size, /ddl/history size, pprof goroutine size, /info/all ---
+/settings -> HTTP 200, 9288 bytes
+/ddl/history -> HTTP 200, 552730 bytes
+/debug/pprof/goroutine?debug=1 -> HTTP 200, 45665 bytes
+/info/all -> HTTP 400, 32 bytes
+/schema_storage -> HTTP 200, 175854 bytes
+--- pprof cmdline leaks server invocation ---
+./bin/tidb-server-config<lab>/tidb-config.toml

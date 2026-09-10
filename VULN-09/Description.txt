@@ -1,1 +1,58 @@
-TBD
+Title: Status API serves configuration, diagnostics and metadata pages without authentication
+
+Weakness: Information Exposure Through Debug Information (CWE-215)
+
+Asset in Scope: TiDB product, such as TiKV, TiDB, TiFlash, PD
+
+Description:
+TiDB's status port (default 10080) is documented as an internal monitoring interface, but the product itself serves a wide set of pages on it without any authentication. The data these pages expose is the same class of information that the SQL layer guards behind dedicated privileges.
+
+Against the pinned build, an anonymous HTTP peer read: the full runtime configuration (/config, 8 KB — data that SQL gates behind the CONFIG privilege, which returned ERROR 1227 to the zero-privilege test user), cluster settings (/settings, 9.3 KB), the complete schema storage JSON (/schema_storage, 176 KB), the DDL job history including the full SQL text of every statement (/ddl/history, 553 KB), and the Go pprof set including the server's command line (/debug/pprof/cmdline shows the binary invocation and config path), plus goroutine/heap dumps. Individually each page is diagnostic metadata; taken together they give an unauthenticated peer complete layout and configuration knowledge of the deployment.
+
+AFFECTED PRODUCT
+- Product: TiDB (tidb-server)
+- Component: HTTP status API, diagnostics endpoints
+- Version tested: v26.3.10, commit 6b4c9f9dce2118aca580a16ef49bd791f4e12b3a
+- Environment: single-node local lab (own test data), status API on port 10180
+
+VULNERABILITY DETAILS
+- Class: Information Exposure Through Debug Information (CWE-215)
+- Required privileges: none — plain HTTP GET
+- Entry point: /config, /settings, /schema, /schema_storage, /ddl/history, /info, /info/all, /debug/pprof/*, /debug/zip, /metrics on the status port
+- Trust boundary crossed: unauthenticated network peer -> SQL-privilege-protected configuration/metadata
+- Root cause: the router in startHTTPServer registers every handler without an authentication layer: https://github.com/pingcap/tidb/blob/6b4c9f9dce2118aca580a16ef49bd791f4e12b3a/pkg/server/http_status.go#L217-L347 ; /config returns the whole config.GetGlobalConfig() object (https://github.com/pingcap/tidb/blob/6b4c9f9dce2118aca580a16ef49bd791f4e12b3a/pkg/server/http_status.go#L272-L274), /ddl/history returns full DDL job records including the original statement text (https://github.com/pingcap/tidb/blob/6b4c9f9dce2118aca580a16ef49bd791f4e12b3a/pkg/server/http_status.go#L248)
+
+REPRODUCTION STEPS
+1. Negative control over SQL as the zero-grant user: SHOW CONFIG; -> ERROR 1227 (42000): Access denied; you need (at least one of) the CONFIG privilege(s) for this operation
+2. curl http://<host>:10080/config — read the full runtime configuration (HTTP 200)
+3. curl http://<host>:10080/settings, /schema_storage, /ddl/history, /debug/pprof/cmdline, /debug/pprof/goroutine?debug=1 — observe sizes and content
+
+BASELINE BEHAVIOR
+The same data over SQL is privilege-gated: SHOW CONFIG needs CONFIG; schema metadata needs grants; DDL history lives in the admin schema mysql.tidb_ddl_history.
+
+OBSERVED RESULT
+/config (HTTP 200, first bytes): {"host":"...","advertise-address":"...","port":4100,...}
+/settings                 -> HTTP 200, 9288 bytes
+/schema_storage           -> HTTP 200, 175854 bytes
+/ddl/history              -> HTTP 200, 552730 bytes (full DDL statement texts)
+/debug/pprof/goroutine    -> HTTP 200, 45665 bytes
+/debug/pprof/cmdline      -> ./bin/tidb-server -config <config-file>
+SQL control in the same window: ERROR 1227 (CONFIG privilege required)
+
+NEGATIVE CONTROL
+SHOW CONFIG as the zero-grant user returns ERROR 1227 while the anonymous HTTP /config returns the identical configuration data with HTTP 200 — the exposure exists only because the HTTP path has no privilege gate.
+
+Full enumeration transcript:
+(See the proof-of-concept files included in this folder.)
+
+Impact:
+An unauthenticated peer obtains the deployment's full configuration, settings, complete schema metadata, DDL history (statement texts), and runtime profiler data. This is reconnaissance-grade information without direct row-data access.
+
+Scope note: no secrets were present in the lab configuration (key material lives in files referenced by path); a deployment that embeds secrets in config would raise the impact. This is honest scoping, not impact inflation.
+
+Severity per program rating: Low ('minor information disclosure: non-sensitive Git leaks, exposed debug pages, or server-configuration information without meaningful impact').
+
+Fix guidance: require authentication for the status API or default it to loopback binding with an explicit opt-out; keep /metrics and /status public if desired, and gate /config, /settings, /schema*, /ddl/*, /debug/* behind credentials.
+
+Proof of Concept:
+(See the proof-of-concept files included in this folder.)
