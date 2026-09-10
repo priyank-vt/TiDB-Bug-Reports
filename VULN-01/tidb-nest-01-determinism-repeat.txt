@@ -1,0 +1,13 @@
+=== fresh boot, re-run identical statement once (zero-grant attacker) ===
+mysql_exit=1
+))))))))))))))))))))))))))))))))))
+--------------
+
+ERROR 2013 (HY000) at line 1: Lost connection to server during query
+server alive
+fatal error: stack overflow
+
+runtime stack:
+runtime.throw({0x8245cca?, 0x200000001?})
+	/usr/lib/go-1.26/src/runtime/panic.go:1229 +0x48 fp=0x7efdbb7fdcf0 sp=0x7efdbb7fdcc0 pc=0x2944ec8
+runtime.newstack()

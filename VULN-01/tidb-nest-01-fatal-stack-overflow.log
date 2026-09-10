@@ -1,0 +1,41 @@
+fatal error: stack overflow
+
+runtime stack:
+runtime.throw({0x8245cca?, 0x200000001?})
+	/usr/lib/go-1.26/src/runtime/panic.go:1229 +0x48 fp=0x7f6a13311cf0 sp=0x7f6a13311cc0 pc=0x2944ec8
+runtime.newstack()
+	/usr/lib/go-1.26/src/runtime/stack.go:1178 +0x5fd fp=0x7f6a13311e20 sp=0x7f6a13311cf0 pc=0x292723d
+runtime.morestack()
+	/usr/lib/go-1.26/src/runtime/asm_amd64.s:681 +0x7d fp=0x7f6a13311e28 sp=0x7f6a13311e20 pc=0x294c7bd
+
+goroutine 17321 gp=0x63fb5e20000 m=24 mp=0x63fb6b67008 [running]:
+github.com/pingcap/tidb/pkg/parser/ast.(*FuncCallExpr).Accept(0x63fc93e7560?, {0x84efc18, 0xd7f9540})
+	tidb/pkg/parser/ast/functions.go:593 +0x1e5 fp=0x64141710370 sp=0x64141710368 pc=0x36eee45
+github.com/pingcap/tidb/pkg/parser/ast.(*FuncCallExpr).Accept(0x708?, {0x84efc18, 0xd7f9540})
+	tidb/pkg/parser/ast/functions.go:600 +0xcc fp=0x641417103c0 sp=0x64141710370 pc=0x36eed2c
+github.com/pingcap/tidb/pkg/parser/ast.(*FuncCallExpr).Accept(0x312?, {0x84efc18, 0xd7f9540})
+	tidb/pkg/parser/ast/functions.go:600 +0xcc fp=0x64141710410 sp=0x641417103c0 pc=0x36eed2c
+github.com/pingcap/tidb/pkg/parser/ast.(*FuncCallExpr).Accept(0x708?, {0x84efc18, 0xd7f9540})
+	tidb/pkg/parser/ast/functions.go:600 +0xcc fp=0x64141710460 sp=0x64141710410 pc=0x36eed2c
+github.com/pingcap/tidb/pkg/parser/ast.(*FuncCallExpr).Accept(0x312?, {0x84efc18, 0xd7f9540})
+	tidb/pkg/parser/ast/functions.go:600 +0xcc fp=0x641417104b0 sp=0x64141710460 pc=0x36eed2c
+github.com/pingcap/tidb/pkg/parser/ast.(*FuncCallExpr).Accept(0x708?, {0x84efc18, 0xd7f9540})
+	tidb/pkg/parser/ast/functions.go:600 +0xcc fp=0x64141710500 sp=0x641417104b0 pc=0x36eed2c
+github.com/pingcap/tidb/pkg/parser/ast.(*FuncCallExpr).Accept(0x312?, {0x84efc18, 0xd7f9540})
+	tidb/pkg/parser/ast/functions.go:600 +0xcc fp=0x64141710550 sp=0x64141710500 pc=0x36eed2c
+github.com/pingcap/tidb/pkg/parser/ast.(*FuncCallExpr).Accept(0x708?, {0x84efc18, 0xd7f9540})
+	tidb/pkg/parser/ast/functions.go:600 +0xcc fp=0x641417105a0 sp=0x64141710550 pc=0x36eed2c
+github.com/pingcap/tidb/pkg/parser/ast.(*FuncCallExpr).Accept(0x312?, {0x84efc18, 0xd7f9540})
+	tidb/pkg/parser/ast/functions.go:600 +0xcc fp=0x641417105f0 sp=0x641417105a0 pc=0x36eed2c
+github.com/pingcap/tidb/pkg/parser/ast.(*FuncCallExpr).Accept(0x708?, {0x84efc18, 0xd7f9540})
+	tidb/pkg/parser/ast/functions.go:600 +0xcc fp=0x64141710640 sp=0x641417105f0 pc=0x36eed2c
+github.com/pingcap/tidb/pkg/parser/ast.(*FuncCallExpr).Accept(0x312?, {0x84efc18, 0xd7f9540})
+	tidb/pkg/parser/ast/functions.go:600 +0xcc fp=0x64141710690 sp=0x64141710640 pc=0x36eed2c
+github.com/pingcap/tidb/pkg/parser/ast.(*FuncCallExpr).Accept(0x708?, {0x84efc18, 0xd7f9540})
+	tidb/pkg/parser/ast/functions.go:600 +0xcc fp=0x641417106e0 sp=0x64141710690 pc=0x36eed2c
+github.com/pingcap/tidb/pkg/parser/ast.(*FuncCallExpr).Accept(0x312?, {0x84efc18, 0xd7f9540})
+	tidb/pkg/parser/ast/functions.go:600 +0xcc fp=0x64141710730 sp=0x641417106e0 pc=0x36eed2c
+github.com/pingcap/tidb/pkg/parser/ast.(*FuncCallExpr).Accept(0x708?, {0x84efc18, 0xd7f9540})
+	tidb/pkg/parser/ast/functions.go:600 +0xcc fp=0x64141710780 sp=0x64141710730 pc=0x36eed2c
+github.com/pingcap/tidb/pkg/parser/ast.(*FuncCallExpr).Accept(0x312?, {0x84efc18, 0xd7f9540})
+	tidb/pkg/parser/ast/functions.go:600 +0xcc fp=0x641417107d0 sp=0x64141710780 pc=0x36eed2c
