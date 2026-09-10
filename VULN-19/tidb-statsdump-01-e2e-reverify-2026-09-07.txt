@@ -1,0 +1,50 @@
+WARNING: option --ssl-verify-server-cert is disabled, because of an insecure passwordless login.
+===== negative control (zero-grant SQL) =====
+--------------
+SELECT COUNT(*) FROM fintech.accounts
+--------------
+
+ERROR 1142 (42000) at line 1: SELECT command denied to user 'zerogrant'@'%' for table 'accounts'
+===== anonymous HTTP fetch =====
+HTTP_STATUS=200 SIZE=4758
+===== decoded TopN values =====
+acct_no = b'AAAA-BBBB-0001'
+acct_no = b'AAAA-BBBB-0002'
+acct_no = b'AAAA-BBBB-0003'
+acct_no = b'AAAA-BBBB-0004'
+acct_no = b'AAAA-BBBB-0005'
+acct_no = b'AAAA-BBBB-0006'
+acct_no = b'AAAA-BBBB-0007'
+acct_no = b'AAAA-BBBB-0008'
+acct_no = b'AAAA-BBBB-0009'
+acct_no = b'AAAA-BBBB-0010'
+balance = b'\x0c\x02\x80\x00\x00\x00K\x19'
+balance = b'\x0c\x02\x80\x00\x00\x020Z'
+balance = b'\x0c\x02\x80\x00\x00\x03pP'
+balance = b'\x0c\x02\x80\x00\x00\x03\xd4\n'
+balance = b'\x0c\x02\x80\x00\x00\x03\xe82'
+balance = b'\x0c\x02\x80\x00\x00\x08\x02\x1e'
+balance = b'\x0c\x02\x80\x00\x00\t\xc4K'
+balance = b'\x0c\x02\x80\x00\x00\x0c\x1c('
+balance = b'\x0c\x02\x80\x00\x00\x10h'
+balance = b'\x0c\x02\x80\x00\x0009C'
+email = b'alice.cooper@example-corp.com'
+email = b'bob.marley@example-corp.com'
+email = b'carol.diaz@example-corp.com'
+email = b'dave.smith@example-corp.com'
+email = b'eve.polastri@example-corp.com'
+email = b'frank.miller@example-corp.com'
+email = b'grace.hopper@example-corp.com'
+email = b'heidi.klum@example-corp.com'
+email = b'ivan.drago@example-corp.com'
+email = b'julia.roberts@example-corp.com'
+id = b'\x80\x00\x00\x00\x00\x00\x00\x01'
+id = b'\x80\x00\x00\x00\x00\x00\x00\x02'
+id = b'\x80\x00\x00\x00\x00\x00\x00\x03'
+id = b'\x80\x00\x00\x00\x00\x00\x00\x04'
+id = b'\x80\x00\x00\x00\x00\x00\x00\x05'
+id = b'\x80\x00\x00\x00\x00\x00\x00\x06'
+id = b'\x80\x00\x00\x00\x00\x00\x00\x07'
+id = b'\x80\x00\x00\x00\x00\x00\x00\x08'
+id = b'\x80\x00\x00\x00\x00\x00\x00\t'
+id = b'\x80\x00\x00\x00\x00\x00\x00\n'

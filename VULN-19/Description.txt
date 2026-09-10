@@ -1,1 +1,64 @@
-TBD
+Title: The unauthenticated statistics HTTP endpoint returns actual table data values from any schema
+
+Weakness: Missing Authentication for Critical Function (CWE-306)
+
+Asset in Scope: TiDB product, such as TiKV, TiDB, TiFlash, PD
+
+Description:
+SUMMARY
+
+TiDB runs an HTTP status API on its own port (default 10080) for monitoring and internal diagnostics. Deployment documentation treats this port as an internal interface, but the product itself performs no authentication on it, so anyone who can reach the port from the network is inside a trust boundary the SQL layer normally guards: seeing table contents only with the right grants.
+
+One endpoint of that API, GET /stats/dump/{db}/{table}, returns the table's statistics document, whose TopN and histogram entries are the database's own stored values, base64-encoded. Requesting the endpoint for a seeded test table with no credentials at all returned HTTP 200 and enough information to decode all ten account numbers, all ten full email addresses, and the corresponding balances of that table - values the SQL layer denies to users without grants. The same endpoint accepts any schema, including mysql.
+
+AFFECTED PRODUCT
+
+- Product: TiDB (tidb-server)
+- Component: HTTP status API / statistics dump endpoint (pkg/server/http_status.go)
+- Version tested: v26.3.10, commit 6b4c9f9dce2118aca580a16ef49bd791f4e12b3a (binary built from the pinned source; ./bin/tidb-server -V prints "v26.3.10-dirty", Git Commit Hash 6b4c9f9dce2118aca580a16ef49bd791f4e12b3a)
+- Environment used for verification: single-node local lab, unistore storage, status API on 127.0.0.1:10180, MySQL protocol on 127.0.0.1:4100
+
+VULNERABILITY DETAILS
+
+- Vulnerability class: unauthenticated endpoint disclosing stored table data
+- Required privileges: none - no account of any kind
+- Entry point: HTTP status API, GET /stats/dump/{db}/{table} (default port 10080)
+- Trust boundary crossed: unauthenticated network peer -> stored table contents (the boundary the SQL privilege layer enforces with SELECT grants)
+- Root location: the status router in https://github.com/pingcap/tidb/blob/6b4c9f9dce2118aca580a16ef49bd791f4e12b3a/pkg/server/http_status.go registers /stats/dump with router.Handle(...) and no authentication wrapper
+- Measured effect: HTTP 200 with a JSON document from which 40/40 stored values of the test table were decoded verbatim (10/10 account numbers, 10/10 full email addresses, id values 1-10, decimal datums of balances)
+
+ROOT CAUSE
+
+- The status router registers data-bearing handlers with router.Handle(...) and no auth wrapper of any kind; /stats/dump serves the full statistics JSON of an arbitrary db.table.
+- The statistics document contains cm_sketch.top_n[].data and histogram bucket bounds in TiDB's datum encoding, which is plain base64 of the real stored values (kind byte + raw value bytes), not hashes or sketches that would resist decoding.
+- The SQL privilege layer is bypassed entirely: an unauthenticated HTTP peer reads what GRANT SELECT would deny over SQL.
+
+REPRODUCTION STEPS
+
+1. (Data owner side, own test data) create fintech.accounts with email/account/balance columns, insert 10 rows, run ANALYZE TABLE accounts WITH 4 BUCKETS; (TiDB also collects statistics automatically via auto-analyze on production tables)
+2. From a host with no SQL credentials: curl -s http://<host>:10080/stats/dump/fintech/accounts -o dump.json
+3. Decode: base64-decode cm_sketch.top_n[].data and strip the datum kind byte and padding (decoder script in the evidence gist).
+
+OBSERVED RESULT
+
+HTTP 200, 4758 bytes in the 2026-09-07 re-verification run. Decoded values:
+- acct_no = AAAA-BBBB-0001 ... AAAA-BBBB-0010 (10/10 values)
+- email = alice.cooper@example-corp.com ... julia.roberts@example-corp.com (10/10 full addresses)
+- id = 1 ... 10; balance = decimal datums of the real balances
+
+Additionally: GET /stats/dump/mysql/user after an admin ANALYZE TABLE mysql.user returned the usernames of all accounts (the auth_string column is skipped by ANALYZE, so password hashes did not appear).
+
+Negative control: the zero-privilege user running SELECT COUNT(*) FROM fintech.accounts over SQL on the same server, in the same test window, receives "ERROR 1142 (42000): SELECT command denied", while the anonymous HTTP fetch of the same table's values returns HTTP 200. This isolates the boundary failure to the unauthenticated HTTP endpoint.
+
+Evidence transcripts (2026-09-07 re-verification against the pinned build: anonymous fetch, decoded TopN values, SQL negative control, plus the decoder script): (See the proof-of-concept files included in this folder.)
+
+Impact:
+Any host that can reach the status port reads real stored values (the most frequent values and histogram bounds of analyzed columns) of any table in any schema, without an account. With typical indexed business columns (emails, account numbers, identifiers), this is unauthorized access to sensitive user data.
+
+- Attacker: an unauthenticated network peer. No account, no privileges, no user interaction; only TCP reachability of the status port (10080 by default).
+- Outcome: verbatim recovery of stored column values for any analyzed table in any schema, including mysql (verified: usernames of all accounts via /stats/dump/mysql/user). With typical business data this is unauthorized access to sensitive user information such as customer email addresses and account numbers.
+- Preconditions on the target: the table must have statistics, which TiDB collects automatically via auto-analyze on production tables (the PoC ran ANALYZE TABLE on its own test table; no non-default configuration was required on the server).
+- Evidence limits: the leak is bounded to values captured in statistics (TopN entries and histogram bounds), not an arbitrary full-table read; row-level exhaustive extraction was not demonstrated and is not claimed. Password hashes did not appear in the mysql.user dump because ANALYZE skips the auth_string column.
+
+Proof of Concept:
+(See the proof-of-concept files included in this folder.)
