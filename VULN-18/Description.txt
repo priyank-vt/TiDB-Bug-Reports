@@ -1,1 +1,60 @@
-TBD
+Title: Cluster identifier validation fails open on tikv-server (default value accepted) and is absent on destructive RPCs
+
+Weakness: Incorrect Authorization (CWE-863)
+
+Asset in Scope: TiDB product, such as TiKV, TiDB, TiFlash, PD
+
+Description:
+Cluster identifier validation fails open on tikv-server (default value accepted) and is absent on destructive RPCs.
+
+SUMMARY
+TiKV request contexts carry a cluster_id that is meant to stop a client of one cluster from talking to another cluster's store — the only lightweight identity check on the data API. A reader would expect every state-changing RPC to enforce it.
+
+The check accepts the default value: the guard rejects only when the request's cluster_id is non-zero and mismatched, so sending cluster_id = 0 — the protobuf default, i.e. no effort at all — passes on every handler that uses the macro. Several sensitive handlers do not use it at all: UnsafeDestroyRange, SplitRegion, Raft/BatchRaft, CheckLeader, and the entire Debug/Diagnostics/Import services have no cluster-id validation.
+
+Measured outcome: a data request with cluster_id = 999 was rejected ("the cluster id of the request does not match the TiKV cluster"); the same request with cluster_id = 0 was processed; and UnsafeDestroyRange carrying cluster_id = 999 executed successfully.
+
+AFFECTED PRODUCT
+- Product: TiKV
+- Version tested: 8.5.8, commit a1fdd6a59bb9c8a282c15677e1894501a52425cf (built from that source; default configuration — no TLS, no authentication)
+- Environment: isolated local lab — one pd-server built from the pinned PD sources plus one tikv-server, loopback only; client = grpcurl with the kvproto definitions this version pins (kvproto @ 07aa8c6)
+
+VULNERABILITY DETAILS
+- Weakness: improper authorization (default-value bypass) and inconsistent application of the only identity check (CWE-863 Incorrect Authorization; secondary CWE-453 Insecure Default Variable Initialization)
+- Required privileges: none
+- Entry points: all Tikv/Debug/Diagnostics/ImportSST RPCs
+- Trust boundary crossed: foreign-cluster or anonymous client → store API
+- Root cause: the guard at src/server/service/kv.rs:220-232 rejects only "req_cluster_id > 0 && req_cluster_id != self.cluster_id" — 0 passes; handlers without the guard include UnsafeDestroyRange (https://github.com/tikv/tikv/blob/a1fdd6a59bb9c8a282c15677e1894501a52425cf/src/server/service/kv.rs#L636-L647), SplitRegion, Raft/BatchRaft, CheckLeader, and the Debug/Diagnostics/Import services
+- Measured unsafe effect: cluster_id = 0 accepted on guarded RPCs; a destructive RPC executed with a deliberately wrong cluster id
+
+REPRODUCTION
+A (control) — wrong, non-zero cluster id on a guarded RPC:
+  grpcurl ... -d '{"context":{"region_id":2,"peer":{"id":3,"store_id":1},"region_epoch":{"conf_ver":1,"version":5},"cluster_id":999},"key":"aw=="}' 127.0.0.1:20160 tikvpb.Tikv/KvGet
+  → ERROR "the cluster id of the request does not match the TiKV cluster"
+B (bypass) — cluster_id = 0 (protobuf default) on the same guarded RPC:
+  → request PROCESSED (response carries a region-scope KV error, i.e. the gate was passed)
+C — destructive RPC with a wrong cluster id (no check implemented):
+  grpcurl ... -d '{"context":{"region_id":2,"peer":{"id":3,"store_id":1},"region_epoch":{"conf_ver":1,"version":5},"cluster_id":999},"start_key":"dg==","end_key":"dw=="}' 127.0.0.1:20160 tikvpb.Tikv/UnsafeDestroyRange
+  → {} (executed successfully; a harmless two-byte range was used for demonstration)
+
+NEGATIVE CONTROL
+Probe A shows the mechanism exists and rejects genuinely mismatched non-zero ids, isolating the default-value bypass and the unguarded handlers as the defect.
+
+Note: no testing was performed against any live infrastructure; all reproduction was on an isolated local lab built from the pinned sources.
+
+Impact:
+The cluster-id check cannot exclude a foreign-cluster or anonymous client that sends the default context — which any stock client does — so it provides no protection against the threat it exists for. The RPCs that skip the check entirely are exactly the destructive ones: UnsafeDestroyRange executed successfully while explicitly carrying a wrong cluster id (recorded), and the raft path (used to inject forged consensus messages) has no check either, which aggravates the forged-raft-message findings.
+
+Measured outcome quoted from the recorded evidence:
+- KvGet cluster_id=999: "the cluster id of the request does not match the TiKV cluster" (rejected);
+- KvGet cluster_id=0: processed (region-scope KV error in the response, meaning the gate was passed);
+- UnsafeDestroyRange cluster_id=999: {{}} (executed successfully).
+
+Evidence limits: demonstrated in an isolated local lab; the finding is an authorization-control defect that aggravates other findings rather than a standalone data-impact issue.
+
+Severity: CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:L/A:N = 5.3 (Medium) — program criteria: "Minor unauthorized operations" (cluster/tenant-ID probing) = Medium.
+
+Remediation: treat cluster_id = 0 as a mismatch on data-plane RPCs and apply the check uniformly — including UnsafeDestroyRange, SplitRegion, Raft/BatchRaft, CheckLeader, Debug, Diagnostics and Import services.
+
+Proof of Concept:
+(See the proof-of-concept files included in this folder.)

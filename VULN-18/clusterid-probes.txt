@@ -1,0 +1,13 @@
+kvget cluster_id=999 (control): ERROR:
+  Code: InvalidArgument
+  Message: the cluster id of the request does not match the TiKV cluster
+
+
+kvget cluster_id=0 (bypass): {
+  "error": {
+    "abort": "Error(Txn(Error(Mvcc(Error(Kv(Error(Other(\"[components/tikv_kv/src/raftstore_impls.rs:86]: \\\"[components/raftstore/src/store/region_snapshot.rs:289]: Key 6B00000000000000F8 is out of [region 2] [7800000100000000FB, )\\\"\"))))))))"
+  },
+  "execDetailsV2": {
+    "timeD
+
+unsafe_destroy_range cluster_id=999 (no check): {}
