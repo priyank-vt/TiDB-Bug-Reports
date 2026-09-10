@@ -1,1 +1,39 @@
+Title : Uncontrolled recursion in TiDB expression parser lets any authenticated SQL user crash the tidb-server process
 
+Asset: TiDB product, such as TiKV, TiDB, TiFlash, PD
+
+Weakness: Uncontrolled Recursion (CWE-674)
+
+
+TiDB is a distributed MySQL-compatible database. A user who is allowed to run queries against their own data must not be able to take the database process itself down, because that process serves every other user and application on the cluster. This report describes a way for a user with no privileges at all to kill that process with a single SQL statement.
+
+The attacker authenticates with any valid account (including an account with zero grants), then sends one large but ordinary-looking SELECT that nests the ABS() function 8,000,001 levels deep. TiDB's parser accepts the statement and builds an equally deeply nested expression tree. When TiDB walks that tree, its recursive visitor consumes stack memory until the Go runtime aborts the whole process with 'fatal error: stack overflow'. This is not a catchable panic: Go treats stack exhaustion as a fatal runtime error, so every connection on the server dies at once. The crash reproduced on 3 out of 3 freshly started servers with the identical statement.
+
+AFFECTED PRODUCT
+- Product: TiDB (tidb-server)
+- Component: SQL parser / expression visitor (pkg/parser/ast)
+- Version tested: v26.3.10, commit 6b4c9f9dce2118aca580a16ef49bd791f4e12b3a
+- Environment: single-node local lab (own test data), MySQL protocol
+
+VULNERABILITY DETAILS
+- Class: Uncontrolled recursion leading to denial of service (CWE-674)
+- Required privileges: any authenticated MySQL user; the test account held GRANT USAGE ON *.* (no object privileges)
+- Entry point: MySQL protocol, COM_QUERY
+- Root cause: FuncCallExpr.Accept recurses once per nesting level with no depth counter: https://github.com/pingcap/tidb/blob/6b4c9f9dce2118aca580a16ef49bd791f4e12b3a/pkg/parser/ast/functions.go#L593-L600
+- The parser imposes no nesting-depth limit (its yacc stack grows on the heap), and MySQL's corresponding limit (ErrTooHighLevelOfNestingForSelect, error 1473) is defined but never raised: https://github.com/pingcap/tidb/blob/6b4c9f9dce2118aca580a16ef49bd791f4e12b3a/pkg/parser/mysql/errcode.go#L493
+- A Go stack overflow is a runtime fatal error that no recover() in the connection handler can intercept (https://github.com/pingcap/tidb/blob/6b4c9f9dce2118aca580a16ef49bd791f4e12b3a/pkg/server/conn.go#L1076), so the whole process dies, not just the offending session.
+
+REPRODUCTION STEPS
+1. Generate the statement: python3 -c "n=8000000; print('SELECT ABS'+'(ABS'*n+'(1'+')'*(n+1)+';')" > q.sql
+2. Send it as the zero-privilege user: mysql -h <host> -P 4000 -u attacker -p... --max-allowed-packet=1G < q.sql
+3. Observe the client error, then check the server process and ports.
+
+Statement size is not a practical obstacle: max_allowed_packet is a session variable the client can raise for its own connection (the 40 MB statement was sent with --max-allowed-packet=1G; the 64 MB server default still allows depths of roughly 3 million).
+
+BASELINE BEHAVIOR
+A small deeply-nested query returns normally; a statement exceeding a parser limit returns a SQL error to the offending session only, and the server keeps serving other connections.
+
+OBSERVED RESULT
+Client: ERROR 2013 (HY000): Lost connection to server during query
+Server stdout: 'fatal error: stack overflow' with goroutine frames in pkg/parser/ast.(*FuncCallExpr).Accept; after the crash the MySQL port and the status port refuse connections and the process is gone.
+Depth 3,000,001 on the same freshly started server exits 0 and returns 1 with the process alive (negative control).
