@@ -1,0 +1,6 @@
+unique card-test-* series in /metrics: 60
+
+sample:
+tikv_grpc_request_source_counter_vec{source="card-test-0"} 0
+tikv_grpc_request_source_counter_vec{source="card-test-1"} 0
+tikv_grpc_request_source_counter_vec{source="card-test-10"} 0

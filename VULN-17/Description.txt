@@ -1,1 +1,59 @@
-TBD
+Title: Unbounded metric cardinality on tikv-server from client-controlled request metadata
+
+Weakness: Allocation of Resources Without Limits or Throttling (CWE-770)
+
+Asset in Scope: TiDB product, such as TiKV, TiDB, TiFlash, PD
+
+Description:
+Unbounded metric cardinality on tikv-server from client-controlled request metadata.
+
+SUMMARY
+TiKV labels two of its Prometheus metric families with strings taken directly from each request (context.request_source and the resource-group name). Any unauthenticated client can send requests with unlimited distinct label values, creating unlimited metric series inside the server process.
+
+Measured outcome: 30 requests with 30 distinct request_source values produced 60 new distinct metric series on the server's metrics endpoint (tikv_grpc_request_source_counter_vec{source="card-test-*"}), and the per-thread label map in src/server/metrics.rs:607-640 grows without bound.
+
+AFFECTED PRODUCT
+- Product: TiKV
+- Version tested: 8.5.8, commit a1fdd6a59bb9c8a282c15677e1894501a52425cf (built from that source; default configuration — no TLS, no authentication)
+- Environment: isolated local lab — one pd-server built from the pinned PD sources plus one tikv-server, loopback only; client = grpcurl with the kvproto definitions this version pins (kvproto @ 07aa8c6)
+
+VULNERABILITY DETAILS
+- Weakness: uncontrolled resource consumption via unbounded label cardinality (CWE-770 Allocation of Resources Without Limits or Throttling)
+- Required privileges: none
+- Entry point: any KV RPC with context.request_source set
+- Trust boundary crossed: unauthenticated client → server memory / monitoring pipeline
+- Root cause: the label value is used as a map key / Prometheus label with no validation (no charset, length or cardinality cap) and no eviction exists for the label map — https://github.com/tikv/tikv/blob/a1fdd6a59bb9c8a282c15677e1894501a52425cf/src/server/metrics.rs#L607-L640
+- Measured unsafe effect: 60 new unique metric series from 30 requests; growth is linear in attacker traffic and never reclaimed
+
+REPRODUCTION
+1. Send 30 RawGet requests, each with a unique context.request_source (card-test-0 ... card-test-29), against region 2 (peer 3).
+2. Query the server's metrics endpoint and count series matching the injected prefix.
+
+OBSERVED (verbatim, recorded in the PoC gist)
+unique card-test-* series in /metrics: 60
+
+tikv_grpc_request_source_counter_vec{source="card-test-0"} 0
+tikv_grpc_request_source_counter_vec{source="card-test-1"} 0
+tikv_grpc_request_source_counter_vec{source="card-test-10"} 0
+
+NEGATIVE CONTROL
+Repeated requests with the same label value do not grow the series count, isolating distinct attacker-supplied values as the growth driver.
+
+SCOPE NOTE (honest limitation)
+The mechanism and measured growth are demonstrated; memory exhaustion at scale requires sustained traffic and was not driven to completion in the lab — the claim is the unbounded-growth mechanism, not a measured exhaustion endpoint.
+
+Note: no testing was performed against any live infrastructure; all reproduction was on an isolated local lab built from the pinned sources.
+
+Impact:
+An unauthenticated client grows tikv-server's in-process metric state and the downstream monitoring pipeline linearly with attacker traffic, with no cap and no eviction:
+- each distinct request_source string permanently adds metric series inside the server process (60 series measured from 30 requests);
+- at scale this degrades server memory and the Prometheus backend (slow resource-exhaustion and monitoring disruption).
+
+Evidence limits: the growth mechanism and per-series accounting were measured; exhaustion at scale requires sustained traffic and was not driven to completion in the lab — no availability-failure endpoint is claimed.
+
+Severity: CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:L = 5.3 (Medium by CVSS; program band Low/Medium — slow resource growth, so the triager may weigh it as Low).
+
+Remediation: cap cardinality — validate/normalize request_source (charset, length, and a fixed maximum number of distinct values via a bounded label set) and bound the label map in src/server/metrics.rs.
+
+Proof of Concept:
+(See the proof-of-concept files included in this folder.)
