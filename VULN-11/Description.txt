@@ -1,1 +1,71 @@
-TBD
+Title: Raft RPCs on tikv-server accept forged peer messages from any unauthenticated peer: single-message crashes and a store left unbootable
+
+Weakness: Missing Authentication for Critical Function (CWE-306)
+
+Asset in Scope: TiDB product, such as TiKV, TiDB, TiFlash, PD
+
+Description:
+Raft RPCs on tikv-server accept forged peer messages from any unauthenticated peer: single-message crashes and a store left unbootable.
+
+SUMMARY
+TiKV nodes form a Raft consensus cluster. Each node expects incoming Raft messages to come from other cluster members, and a rejected or malformed message must never damage the receiving node's persisted state.
+
+Both expectations fail. The Raft and BatchRaft gRPC methods on the ordinary peer port accept RaftMessage protobufs from any unauthenticated network peer; the only check applied is that the message's to_peer.store_id equals the local store id. No cluster-id validation exists on this path, and message contents (term, commit index, extra fields) are forwarded verbatim into the raft state machine. Measured outcome: a forged MsgHeartbeat with commit=u64::MAX panics the raft log ("to_commit 18446744073709551615 is out of range"); a message with an unset from_peer plus an extra-message type panics an unwrap(); a message with a crafted merge_target panics a second unwrap(); and a forged MsgTimeoutNow with term=u64::MAX crashed the node and left it failing to boot after restart ("term of raft state < commit term of apply state") until its data directory was reset.
+
+AFFECTED PRODUCT
+- Product: TiKV
+- Version tested: 8.5.8, commit a1fdd6a59bb9c8a282c15677e1894501a52425cf (built from that source; default configuration — no TLS, no authentication)
+- Environment: isolated local lab — one pd-server built from the pinned PD sources plus one tikv-server, loopback only; client = grpcurl with the kvproto definitions this version pins (kvproto @ 07aa8c6)
+
+VULNERABILITY DETAILS
+- Weakness: missing authentication on a critical inter-node interface (CWE-306), with missing validation of attacker-controlled message fields (CWE-20)
+- Required privileges: none; the attacker needs a valid (region_id, peer_id, store_id) triple, which on any observed fresh bootstrap are small sequential integers (2/3/1) listed by the PD API
+- Entry point: tikvpb.Tikv/Raft (and BatchRaft) on port 20160
+- Trust boundary crossed: unauthenticated network peer → cluster-internal raft message path
+- Measured unsafe effect: three distinct single-message process kills (exit code 1 with FATAL lines), plus one case of a store that refused to boot after restart
+
+ROOT CAUSE
+The ingest path validates only to_peer.store_id and then feeds the message verbatim into the raft router:
+  https://github.com/tikv/tikv/blob/a1fdd6a59bb9c8a282c15677e1894501a52425cf/src/server/service/kv.rs#L181-L199
+Reachable failure sites:
+- components/raftstore/src/store/fsm/peer.rs#L3205-L3211 — msg.from_peer.unwrap() for MsgSnapGenPrecheckRequest (no requirement that from_peer is set)
+- components/raftstore/src/store/fsm/peer.rs#L4796-L4800 — find_peer(merge_target, store_id).unwrap() (no requirement that merge_target contains a local peer)
+- components/raftstore/src/store/fsm/apply.rs#L4121 — "commit state jump backward" fatal after a forged election trigger
+- components/raftstore/src/store/entry_storage.rs#L674 (and :509) — boot-time validation failure of the state left behind
+- raft-rs commit_to panics via fatal! when a heartbeat claims a commit index beyond the local log: https://github.com/tikv/raft-rs/blob/ad13f3d55a1b9d051c0d3b7cd068a6d4e0be3d9e/src/raft_log.rs#L299-L311 — TiKV performs no sanity check on message.commit before stepping
+There is no shared secret, cluster-id check or peer identity binding on this path (the RaftMessage protobuf carries no cluster id; optional mTLS authenticates a CA, not a store). Existing guards (stale-epoch drop, to_peer match) are bypassed by setting region_epoch to u64::MAX.
+
+REPRODUCTION (envelope for all cases: region_id=2, to_peer={id:3,store_id:1}, region_epoch={conf_ver:u64::MAX, version:u64::MAX}; identifiers are the deterministic bootstrap values readable from the PD API)
+(a) Forged MsgHeartbeat: message{msg_type: MsgHeartbeat(8), from: 99, term: u64::MAX, commit: u64::MAX} → process exit 1,
+    [FATAL] ["to_commit 18446744073709551615 is out of range [last_index 25], raft_id: 3, region_id: 2"] [location=<raft-rs>/src/raft_log.rs:305]
+(b) Extra message without from_peer: extra_msg{type: MsgSnapGenPrecheckRequest(15)} (from_peer field omitted) → process exit 1,
+    [FATAL] ["explicit panic"] [location=<rust-protobuf>/protobuf/src/singular.rs:273] (the msg.from_peer.unwrap() in peer.rs:3209)
+(c) Crafted merge_target: merge_target = Region{id: u64::MAX-2, peers: [only a foreign store]} → process exit 1,
+    [FATAL] ["called Option::unwrap() on a None value"] [location=components/raftstore/src/store/fsm/peer.rs:4799]
+(d) Forged MsgTimeoutNow: message{msg_type: MsgTimeoutNow(14), term: u64::MAX, log_term: u64::MAX} →
+    crash: [FATAL] ["[region 2] 3 commit state jump backward (73, 60) -> (74, 0)"] [location=components/raftstore/src/store/fsm/apply.rs:4121]
+    then on EVERY restart: [FATAL] [server.rs:1106] ["failed to start raft_server: ... term of raft state < commit term of apply state, region 2"] [location=.../entry_storage.rs:674]
+    The store stayed unbootable until its data directory was reset.
+
+Recorded client payloads and server FATAL lines for all four cases are in the PoC gist.
+
+NEGATIVE CONTROL
+Messages with sane field values (heartbeats with in-range commit indexes) were processed continuously during all other lab sessions without any FATAL, isolating the forged fields as the cause. A leader-directed MsgReadIndex with empty entries did not reproduce in this single-voter topology and is documented in the audit notes rather than claimed.
+
+Note: no testing was performed against any live infrastructure; all reproduction was on an isolated local lab built from the pinned sources.
+
+Impact:
+Anauthenticated peer can kill any store whose gRPC port it can reach with a single forged raft message, and can leave a store refusing to restart — persistent unavailability of the storage component until an operator wipes or manually repairs the store's data directory. On a multi-store cluster, an attacker who can reach every store's port can crash them all; the restart-failure case converts a transient crash into persistent downtime.
+
+Measured effect (all on a server built from the pinned source, version 8.5.8 commit a1fdd6a59bb9c8a282c15677e1894501a52425cf):
+- Case (a) forged MsgHeartbeat commit=u64::MAX: deterministic process exit 1, FATAL at the raft log commit_to check ("to_commit 18446744073709551615 is out of range").
+- Case (b) MsgSnapGenPrecheckRequest with from_peer omitted: deterministic process exit 1, FATAL at a protobuf Option unwrap.
+- Case (c) merge_target region without a local peer: deterministic process exit 1, FATAL at peer.rs:4799.
+- Case (d) forged MsgTimeoutNow term=u64::MAX: process crash (FATAL "commit state jump backward" at apply.rs:4121) followed by repeated boot-time FATAL ("term of raft state < commit term of apply state") — the store would not start again until its data directory was reset.
+
+Evidence limits: measured on the default (unauthenticated) deployment in an isolated lab; availability-only impact — no data disclosure is claimed. The (region_id/peer_id/store_id) identifiers used are the deterministic small integers of a fresh bootstrap, discoverable from the same unauthenticated interfaces. Severity mapping follows the program's criteria, which rate "DoS affecting core system services ... make a TiDB component unavailable" as Critical.
+
+Remediation: authenticate the raft transport (per-store mTLS identity or a shared cluster secret) and enforce the cluster id on this path; validate message fields before stepping (commit/index bounds, from_peer presence, merge_target peer membership, poisoned term values); convert the identified unwrap() calls to validated error paths.
+
+Proof of Concept:
+(See the proof-of-concept files included in this folder.)

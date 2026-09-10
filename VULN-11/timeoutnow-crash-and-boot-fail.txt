@@ -1,0 +1,10 @@
+Finding: forged Raft MsgTimeoutNow (term=u64::MAX) from an unauthenticated peer, sent to the gRPC port.
+
+1) First request crashed the node:
+[2026/09/07 03:02:47.741 -05:00] [FATAL] [lib.rs:479] ["[region 2] 3 commit state jump backward (73, 60) -> (74, 0)"] [
+location=components/raftstore/src/store/fsm/apply.rs:4121]
+
+2) Afterwards tikv-server refused to start; this repeated on every restart until the data directory was reset:
+[2026/09/07 03:03:30.460 -05:00] [FATAL] [server.rs:1106] ["failed to start raft_server: Engine(Other(\"[components/raftstore/src/store/fsm/store.rs:1351]: \\\"[components/raftstore/src/store/entry_storage.rs:674]: [region 2] 3 validate state fail: Other(\\\\\\\"[components/raftstore/src/store/entry_storage.rs:509]: term of raft state < commit term of apply state, region 2, raft state hard_state { vote: 3 commit: 74 } last_index: 74, apply state applied_index: 73 commit_index: 73 commit_term: 60 truncated_state { index: 53 term: 41 }\\\\\\\")\\\"\"))"] [thread_id=1]
+[2026/09/07 03:03:30.460 -05:00] [FATAL] [server.rs:1106] ["failed to start raft_server: Engine(Other(\"[components/raftstore/src/store/fsm/store.rs:1351]: \\\"[components/raftstore/src/store/entry_storage.rs:674]: [region 2] 3 validate state fail: O
+[2026/09/07 03:06:49.320 -05:00] [FATAL] [server.rs:1106] ["failed to start raft_server: Engine(Other(\"[components/raftstore/src/store/fsm/store.rs:1351]: \\\"[components/raftstore/src/store/entry_storage.rs:674]: [region 2] 3 validate state fail: O

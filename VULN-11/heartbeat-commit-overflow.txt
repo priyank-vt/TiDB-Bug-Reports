@@ -1,0 +1,3 @@
+request: tikvpb.Tikv/Raft forged MsgHeartbeat term=u64::MAX commit=u64::MAX (envelope: region 2, to_peer 3/store 1, epoch u64::MAX)
+
+[2026/09/06 01:10:18.092 -05:00] [FATAL] [lib.rs:479] ["to_commit 18446744073709551615 is out of range [last_index 25], raft_id: 3, region_id: 2"] [

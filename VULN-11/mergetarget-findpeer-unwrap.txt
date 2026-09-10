@@ -1,0 +1,3 @@
+request: tikvpb.Tikv/Raft merge_target = Region{id: 2^64-2, peers: [store 9 only]} (no peer on the victim store)
+
+[2026/09/07 03:22:32.076 -05:00] [FATAL] [lib.rs:479] ["called `Option::unwrap()` on a `None` value"] [

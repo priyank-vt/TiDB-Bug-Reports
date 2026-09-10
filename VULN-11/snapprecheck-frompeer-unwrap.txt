@@ -1,0 +1,3 @@
+request: tikvpb.Tikv/Raft extra_msg.type=MsgSnapGenPrecheckRequest (15), from_peer omitted
+
+[2026/09/07 03:21:48.467 -05:00] [FATAL] [lib.rs:479] ["explicit panic"] [
