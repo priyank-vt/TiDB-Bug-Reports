@@ -1,1 +1,62 @@
-TBD
+Title: Unauthenticated arbitrary SQL execution on TiFlash flash gRPC service via GetTiFlashSystemTable RPC (v26.3.11)
+
+Weakness: Missing Authentication for Critical Function (CWE-306)
+
+Asset in Scope: TiDB product, such as TiKV, TiDB, TiFlash, PD
+
+Description:
+Summary:
+TiFlash, the columnar engine of the TiDB platform, exposes an internal gRPC service on TCP port 3930 (default binding 0.0.0.0:3930). The GetTiFlashSystemTable method on that service exists so TiDB can read TiFlash's internal system.dt_* monitoring tables. It takes a free-text SQL string from the request and executes it with TiFlash's internal query engine, with no authentication and no restriction on the statement: with the default (non-TLS) configuration, any host that can reach the port can submit any SQL and read the full result.
+
+Affected version:
+TiFlash v26.3.11, commit 3e5d8f8f5b8e81f6704794d94d4be857b1819c2e (self-reported by the built binary; source: https://github.com/pingcap/tiflash/tree/3e5d8f8f5b8e81f6704794d94d4be857b1819c2e). Verified on a local lab cluster: pd v26.3.4, tikv v8.5.8, tidb v26.3.10, tiflash v26.3.11 built from the public source at tag v26.3.11 with the official toolchain (clang 17.0.6, sanitizer build; no TLS configured anywhere - the upstream default).
+
+Root cause:
+Handler: FlashService::GetTiFlashSystemTable at https://github.com/pingcap/tiflash/blob/3e5d8f8f5b8e81f6704794d94d4be857b1819c2e/dbms/src/Flash/FlashService.cpp#L1238-L1290
+
+    auto check_result = checkGrpcContext(grpc_context);   // returns OK when no TLS config is set
+    ReadBufferFromString in_buf(request->sql());         // raw attacker-controlled SQL
+    executeQuery(in_buf, out_buf, false, *ctx, nullptr);  // no allowlist, no auth
+
+The only gate, checkGrpcContext (FlashService.cpp:812-829), delegates to TiFlashSecurityConfig::checkGrpcContext (https://github.com/pingcap/tiflash/blob/3e5d8f8f5b8e81f6704794d94d4be857b1819c2e/dbms/src/Common/TiFlashSecurity.h#L179-L194), which returns true immediately when allowed_common_names is empty (every default non-TLS deployment). The service binds 0.0.0.0:3930 (RaftConfigParser.cpp:38) with grpc::InsecureServerCredentials (FlashGrpcServerHolder.cpp:138-147). The intended caller (TiDB) only constructs SELECT * FROM system.dt_* statements (https://github.com/pingcap/tidb/blob/6b4c9f9dce2118aca580a16ef49bd791f4e12b3a/pkg/executor/infoschema_reader.go#L3600-L3625), but that constraint lives entirely in the caller; the server never validates it.
+
+Steps To Reproduce:
+1. Start a TiDB cluster with a TiFlash node; create any table with a TiFlash replica (AVAILABLE=1).
+2. From any host with TCP access to the TiFlash 3930 port, run the PoC client (Go, public kvproto stubs) with a chosen SQL file - no credentials, no TLS, no cluster identity:
+   tiflash_system_table_client -addr <tiflash-host>:3930 -sql-file probe2.sql -out out.json
+   where probe2.sql contains: SELECT * FROM system.databases
+3. out.json contains the full result returned by TiFlash.
+
+Measured results (all from saved transcripts; probe set + retest matrix in the PoC gist):
+- SELECT * FROM system.databases -> full database inventory with internal IDs and storage paths (db_1/mysql, db_112/test, db_114/secaudit, db_2/sys, system), 1498 bytes, byte-identical across original run, full retest, and a post-restart re-verification; also reproduced from the host's LAN address (remote reachability with the default 0.0.0.0 binding).
+- SELECT * FROM system.columns -> complete column-level schema of all replicated user tables, including the privilege columns of the TiFlash-side copy of mysql.user (host/db/user/select_priv/insert_priv/...).
+- SELECT * FROM system.processes -> in-flight query text with client IP/port of other users.
+- SELECT * FROM system.settings -> the full engine configuration dump, 28628 bytes.
+- SELECT * FROM system.dt_tables / dt_segments / one / numbers / metrics / build_options -> all succeed (storage metadata, segment layout, build fingerprint).
+- Negative controls (recorded): SELECT * FROM secaudit.t1 (user rows by TiDB name) is REJECTED with "Database secaudit doesn't exist"; SELECT currentUser() is REJECTED with "Unknown function currentUser" - the endpoint exposes the internal engine, not TiDB's SQL layer or user row data.
+- Resource-hold variant: SELECT * FROM system.numbers without LIMIT holds one gRPC worker plus a full query pipeline until the client deadline; the component stayed alive and kept serving queries in the single-node lab - no crash claimed.
+
+Supporting Material/References:
+- PoC client source, executed statement set, retest matrix: (See the proof-of-concept files included in this folder.)
+- Fix recommendations:
+1. Restrict the executed statement to the exact shapes TiDB legitimately sends (only SELECT * FROM system.dt_tables|dt_segments|dt_local_indexes with the WHERE/LIMIT clauses TiDB generates), or replace the free-text SQL field with structured request fields.
+2. Enforce authentication on this RPC independent of the metrics TLS path: require a valid client certificate when TLS is configured, and reject the RPC entirely when no security configuration is set.
+3. Restrict the system.* tables reachable through this handler to the dt_* allowlist (blocks system.processes, system.settings, system.columns, system.metrics disclosure).
+
+Impact:
+An unauthenticated network attacker with only TCP access to the TiFlash flash service port (default 0.0.0.0:3930) executes arbitrary SQL on TiFlash's internal query engine and receives full result sets.
+
+Measured outcomes (all captured in saved transcripts, summarized in the PoC gist):
+1. Complete inventory of every TiDB database and table replicated to TiFlash - internal numeric IDs, TiDB-visible names, and physical storage paths (system.databases, system.dt_tables, system.dt_segments, system.columns).
+2. Full column-level schema of all replicated user tables, including the privilege columns of the TiFlash-side copy of mysql.user.
+3. The complete engine configuration dump (system.settings, 28,628 bytes in the verification lab), including storage paths and resource limits.
+4. In-flight query text of other users together with their client IP and port (system.processes) - a query-observation primitive over business data of co-tenant users.
+5. A per-connection resource-hold variant (unbounded system.numbers scan) that contends with the same gRPC worker pool serving MPP dispatch; the component stayed alive in the single-node lab, so no outage is claimed.
+
+Evidence limits (stated explicitly):
+- User-table row data is NOT directly returned (negative control: queries by TiDB names are rejected; the internal catalog uses db_<id>/t_<id> naming).
+- No file-read or table-function path exists in this build; no write capability measured; no code execution.
+- CVSS 3.1: 7.5 (High), vector AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:L. This maps to the program's High band: unauthorized access to sensitive information / sensitive-information disclosure on a core product component, remotely reachable with default configuration, trivially reproducible.
+
+Proof of Concept:
+(See the proof-of-concept files included in this folder.)
