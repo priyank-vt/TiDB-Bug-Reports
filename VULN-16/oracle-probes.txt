@@ -1,0 +1,11 @@
+existing /etc/passwd: {
+  "error": {
+    "message": "Engine Engine(Status { code: IoError, sub_code: None, sev: NoError, state: \"Corruption: Bad table magic number: expected 9863518390377041911, found 751654080789376878 in <tikv-data-dir>/data/tikv/import/.temp/03030303-0303-0303-0303-030303030303_2_0_0_default_2.sst\" })"
+  }
+}
+
+missing file: {
+  "error": {
+    "message": "Cannot read local:///etc/zzz_missing_file into <tikv-data-dir>/data/tikv/import/.temp/04040404-0404-0404-0404-040404040404_2_0_0_default_2.sst: No such file or directory (os error 2)"
+  }
+}

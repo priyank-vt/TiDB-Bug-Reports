@@ -1,1 +1,62 @@
-TBD
+Title: Filesystem read oracle on the tikv-server host via the client-supplied local external-storage backend
+
+Weakness: Path Traversal (CWE-22)
+
+Asset in Scope: TiDB product, such as TiKV, TiDB, TiFlash, PD
+
+Description:
+Filesystem read oracle on the tikv-server host via the client-supplied local external-storage backend.
+
+SUMMARY
+The import-service requests that carry cloud credentials also accept a "local" backend whose path is any server-side directory and whose name is any file under it. A reader would expect the server to confine local storage to its own backup directories.
+
+The server opens path.join(name) with no confinement on the read side (only the write path checks names). Measured outcome: two otherwise-identical ImportSST/Download requests — one naming /etc/passwd, one naming a nonexistent file — returned clearly different error messages: the /etc/passwd attempt returned a storage-engine "Bad table magic number ... found 751654080789376878" error (the file's bytes were actually read and parsed), while the missing file returned "No such file or directory". This is a per-file existence/readability/content oracle over the whole server filesystem.
+
+AFFECTED PRODUCT
+- Product: TiKV
+- Version tested: 8.5.8, commit a1fdd6a59bb9c8a282c15677e1894501a52425cf (built from that source; default configuration — no TLS, no authentication)
+- Environment: isolated local lab — one pd-server built from the pinned PD sources plus one tikv-server, loopback only; client = grpcurl with the kvproto definitions this version pins (kvproto @ 07aa8c6)
+
+VULNERABILITY DETAILS
+- Weakness: path traversal / unrestricted local file read oracle (CWE-22 Path Traversal; secondary CWE-209 Information Exposure Through Error Message)
+- Required privileges: none
+- Entry point: import_sstpb.ImportSST/Download with storage_backend.local.path + name
+- Trust boundary crossed: unauthenticated network peer → server filesystem reads
+- Root cause: LocalStorage::read opens base.join(name) with no traversal check — https://github.com/tikv/tikv/blob/a1fdd6a59bb9c8a282c15677e1894501a52425cf/components/external_storage/src/local.rs#L131-L141; only the write side validates names (the source comment there acknowledges that hazard); raw storage errors (paths, parse details) are propagated to the unauthenticated caller
+- Measured unsafe effect: file-existence oracle with content-dependent error differentiation across the filesystem
+
+REPRODUCTION
+Probe A — a real server file:
+  grpcurl ... -d '{"storage_backend":{"local":{"path":"/etc"}},"name":"passwd","sst":{"uuid":"...","cf_name":"default","region_id":2}}' 127.0.0.1:20160 import_sstpb.ImportSST/Download
+Probe B — identical except the target does not exist:
+  ... "name":"zzz_missing_file" ...
+
+OBSERVED (verbatim, recorded in the PoC gist)
+Probe A: ... Corruption: Bad table magic number: expected 9863518390377041911, found 751654080789376878 ...   # /etc/passwd bytes were read and parsed
+Probe B: Cannot read local:///etc/zzz_missing_file into ...: No such file or directory
+
+The distinct responses (parsed-content error vs not-found) constitute the oracle.
+
+NEGATIVE CONTROL
+Identical requests differing only in the target name produced materially different errors, isolating the path choice — not a general Download failure — as the discriminator.
+
+SCOPE NOTE (honest limitation)
+The demonstrated primitive is the oracle (existence + content-derived error values). The full content-read extension — any file that parses as a valid SST can be downloaded, key-rewritten and ingested — is code-verified in the same backend (local.rs read path + sst_importer.rs rewrite/ingest) but was not exercised against a third-party file in the lab; it is not claimed as demonstrated.
+
+Note: no testing was performed against any live infrastructure; all reproduction was on an isolated local lab built from the pinned sources.
+
+Impact:
+An unauthenticated peer gains a filesystem-existence and parse oracle over the whole host running tikv-server: for any path it chooses, the server's error message reveals whether the file exists (not-found vs read errors) and properties of its content (the RocksDB parse error quotes a magic-number value derived from the file's actual bytes — demonstrated on /etc/passwd). The same code path constitutes a content-read primitive for any file that parses as a valid SST (e.g. another store's or tenant's data on shared storage), which could then be rewritten and ingested through the import path.
+
+Measured outcome quoted from the recorded evidence:
+- /etc/passwd probe: "Corruption: Bad table magic number: expected 9863518390377041911, found 751654080789376878" — content-dependent value;
+- missing-file probe: "Cannot read local:///etc/zzz_missing_file into ...: No such file or directory".
+
+Evidence limits: the demonstrated primitive is the oracle; the content-read extension is code-verified but was not exercised against a third-party file in the lab and is not claimed. No integrity or availability impact is claimed for this finding.
+
+Severity: CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N = 5.3 (Medium by CVSS for the demonstrated oracle). Program policy places "sensitive-information disclosure through path traversal" at High; the SST content-read extension would carry C:H but only the oracle was measured — the triager may weigh that extension.
+
+Remediation: confine "local" backends to an operator-configured root and canonicalize-verify every joined path (mirror the write-side check on the read side); never return raw storage errors (paths, parse details) to unauthenticated callers.
+
+Proof of Concept:
+(See the proof-of-concept files included in this folder.)
