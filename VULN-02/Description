@@ -1,1 +1,53 @@
+Title : EXPORT_SET builds unbounded multi-gigabyte strings letting any authenticated SQL user OOM-kill tidb-server
 
+Weakness: Allocation of Resources Without Limits or Throttling (CWE-770)
+
+
+TiDB enforces two guards on string-building functions: max_allowed_packet (per-result cap, default 64 MiB) and tidb_mem_quota_query (per-query memory tracker, default 1 GiB), plus a process-level memory limit that kills the largest tracked consumer. This report shows a built-in function that bypasses all three, measured on the pinned release.
+
+The attacker is any authenticated user, including one with zero privileges. One SELECT calling EXPORT_SET with a 32 MiB argument makes TiDB build a 2,113,929,280-byte (2.1 GiB) result string and return it successfully. The statement's allocations are invisible to TiDB's memory trackers, so the quota engine never cancels it. On a 32 GB host, three to eight such statements from a single user drove the process to 28.7 GB resident memory until the Linux kernel's out-of-memory killer terminated tidb-server; TiDB's own memory-limit killer logged, in the same window, that it could not find any session large enough to kill because the memory was untracked.
+
+AFFECTED PRODUCT
+- Product: TiDB (tidb-server)
+- Component: expression evaluation, string built-ins (pkg/expression)
+- Version tested: v26.3.10, commit 6b4c9f9dce2118aca580a16ef49bd791f4e12b3a
+- Environment: single-node local lab (own test data), MySQL protocol, host with 32 GB RAM
+
+VULNERABILITY DETAILS
+- Class: Allocation of Resources Without Limits or Throttling (CWE-770)
+- Required privileges: any authenticated user; the test account held GRANT USAGE ON *.* only
+- Entry point: MySQL protocol, COM_QUERY, scalar EXPORT_SET (all three signatures and the vectorized paths share the same helper)
+- Root cause: exportSet builds its result with 'result += on' in a loop over numberOfBits (up to 64) and never consults maxAllowedPacket or the MemTracker: https://github.com/pingcap/tidb/blob/6b4c9f9dce2118aca580a16ef49bd791f4e12b3a/pkg/expression/builtin_string.go#L3403-L3417 (3-arg signature passes numberOfBits=64: https://github.com/pingcap/tidb/blob/6b4c9f9dce2118aca580a16ef49bd791f4e12b3a/pkg/expression/builtin_string.go#L3450 ; vectorized paths repeat it per row: https://github.com/pingcap/tidb/blob/6b4c9f9dce2118aca580a16ef49bd791f4e12b3a/pkg/expression/builtin_string_vec.go#L927)
+- Every sibling amplifier in the same file enforces the packet limit and returns NULL via handleAllowedPacketOverflowed: REPEAT, SPACE, CONCAT_WS, LPAD, INSERT, TO_BASE64. EXPORT_SET was left out.
+
+REPRODUCTION STEPS
+1. As the zero-grant user, check the guards: SELECT @@tidb_mem_quota_query, @@max_allowed_packet; -> 1073741824, 67108864
+2. Run: SELECT LENGTH(EXPORT_SET(-1, REPEAT('A', 33554432), 'B', ',', 64)) AS result_len;
+3. Observe the returned length and the server RSS before/after.
+
+BASELINE BEHAVIOR
+The equivalent overload through REPEAT is stopped by the packet guard: LENGTH(REPEAT('A', 67108864)) returns 67108864 and LENGTH(REPEAT('A', 67108865)) returns NULL (limit enforced). A query whose tracked memory exceeds 1 GiB is cancelled by the mem-quota action instead of completing.
+
+OBSERVED RESULT
+result_len: 2113929280 (statement exit 0; quota = 1073741824 bytes)
+Server RSS: 705,828 KB before -> 16,610,144 KB after (single statement, zero-grant user)
+Kernel record after 8 statements: 'Out of memory: Killed process <pid> (tidb-server) ... anon-rss:28667288kB'
+TiDB's own limit killer in the same window: 'global memory controller tries to kill the top1 memory consumer, but no one larger
+than tidb_server_memory_limit_sess_min_size is found'
+
+NEGATIVE CONTROL
+REPEAT in the same session: 64 MiB returns a length, 64 MiB + 1 returns NULL. EXPORT_SET with a 32 MiB argument (half the limit) 
+produced a result 31x the limit with exit code 0, isolating the defect to the missing guard in exportSet.
+
+Impact:
+One low-privilege user can, with a handful of ordinary SELECT statements, push the tidb-server process into kernel OOM termination; 
+all sessions on the node drop and the node refuses new connections until restarted. Measured: +15.9 GiB RSS from a single statement 
+(705,828 KB -> 16,610,144 KB); process death after 3 + 5 statements on a 32 GB host. Statement amplification scales with rows in the 
+vectorized path, so the number of statements needed on a production host depends on its RAM and concurrent load; those quantities were
+not measured. This directly makes the core database service unavailable, matching the program's Critical rating for 'DoS affecting core 
+system services'. Fix guidance: apply the same maxAllowedPacket check + handleAllowedPacketOverflowed used by
+REPEAT/SPACE/LPAD/INSERT/TO_BASE64 inside exportSet, and track its allocations with the session MemTracker so the existing quota and 
+memory-limit actions can cancel the statement.
+
+Proof of concept:
+Attached in other files
