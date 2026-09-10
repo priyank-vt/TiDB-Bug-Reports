@@ -1,1 +1,91 @@
-TBD
+Title: Missing Project-Level Authorization on SQL Web-Terminal & PD Dashboard Proxy
+
+Weakness: Improper Access Control - Generic (CWE-284)
+
+Asset in Scope: tidbcloud.com
+
+Description:
+Description
+The SQL Web Terminal proxy and PD Dashboard proxy only enforce Organization membership. They do not check for Project-level role binding.
+A user who is only org:member (with zero Project roles on the target project) can:
+
+Access the interactive SQL login shell of a cluster that is completely hidden from them in the console.
+Receive internal Kubernetes service hostnames and cluster DNS information via the PD Dashboard error response.
+
+All normal console APIs correctly deny this user with permission denied.
+
+Steps to Reproduce (as performed)
+Test Account: User ID 23146841 (olama7366+1@gmail.com)
+
+Target Org: 1372813089209364505
+
+Target Project: 1372813089454834323
+
+Target Cluster: 10485640276882348877
+1. Confirm user roles
+
+GET /api/v1/login-user-roles
+Response:
+JSON{
+  "total": 3,
+  "items": [
+    {
+      "scope_type": "ORG",
+      "scope_id": "1372813089209364505",
+      "role_name": "org:member"
+    },
+    {
+      "scope_type": "ORG",
+      "scope_id": "1372813089209364508",
+      "role_name": "org:owner"
+    },
+    {
+      "scope_type": "PROJECT",
+      "scope_id": "1372813089454834166",
+      "role_name": "project:owner"
+    }
+  ]
+}
+
+→ No Project role exists on the target project 1372813089454834323.
+
+2. Console correctly denies access
+
+GET /api/v1/orgs/1372813089209364505/projects/1372813089454834323/clusters
+Response:
+JSON{"base_resp":{"err_code":"49900003","err_msg":"permission denied"}}
+
+3. PD Dashboard Proxy – Internal Information Disclosure
+
+GET /proxy/orgs/1372813089209364505/clusters/10485640276882348877/pd/dashboard/?jwt=<JWT>
+Response: 500 Internal Server Error
+textpdaAPI fetch login info: Get "http://db10485640276882348877-pd.free-tier-prod-1372813089454834323.svc:2379/dashboard/api/user/login_info": dial tcp: lookup db10485640276882348877-pd.free-tier-prod-1372813089454834323.svc on 172.20.0.10:53: no such host
+
+→ Leaks internal Kubernetes service name + cluster DNS resolver.
+
+4. Terminal Proxy – Unauthorized Interactive Shell
+
+GET /proxy/orgs/1372813089209364505/clusters/10485640276882348877/terminal/root/?jwt=<JWT>
+Response: 200 OK
+
+Title: /usql@shell-db10485640276882348877-23146841-root-m62jf
+
+Opening the URL in the browser successfully loads the TiDB web terminal and displays:
+
+textWelcome to TiDB
+Please enter your TiDB password to log in to a client shell.
+Enter password:
+
+Remediation
+Enforce the same Project-scope authorization check used by the console APIs on both proxy endpoints (/terminal/ and /pd/dashboard/).
+Additionally, avoid returning raw upstream connection errors that contain internal hostnames and DNS addresses.
+
+Impact:
+Impact
+
+An organization member with no project permissions can reach the interactive SQL login surface of any cluster inside the organization.
+Internal Kubernetes service hostnames and DNS information are disclosed.
+The database password gate remains effective (no SQL execution was possible), so the impact is limited to unauthorized access to the login interface + topology disclosure.
+
+Proof of Concept:
+(See the proof-of-concept files included in this folder.)
