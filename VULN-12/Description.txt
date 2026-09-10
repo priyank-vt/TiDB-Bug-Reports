@@ -1,1 +1,67 @@
-TBD
+Title: Unauthenticated arbitrary directory deletion on the tikv-server host via the ImportSST ClearFiles gRPC method
+
+Weakness: Path Traversal (CWE-22)
+
+Asset in Scope: TiDB product, such as TiKV, TiDB, TiFlash, PD
+
+Description:
+Unauthenticated arbitrary directory deletion on the tikv-server host via the ImportSST ClearFiles gRPC method.
+
+SUMMARY
+TiKV exposes an ImportSST gRPC service on its ordinary peer port for bulk-import tooling. One of its methods, ClearFiles, is documented as clearing files in the import directory that match a client-supplied prefix. A reader would expect the server to confine any deletion to its own import directory.
+
+It does not. The server concatenates the client-supplied prefix onto the import-directory root with Path::join, which — for an absolute prefix — discards the base entirely (and a ../ prefix escapes it), then passes the result to remove_dir_all. One unauthenticated gRPC request therefore deletes any directory writable by the tikv-server process, anywhere on the filesystem. Measured outcome: a test directory created at /tmp/tikv_victim (outside the import directory) was deleted by a single request with prefix="/tmp/tikv_victim"; the server answered successfully and stayed alive.
+
+AFFECTED PRODUCT
+- Product: TiKV
+- Version tested: 8.5.8, commit a1fdd6a59bb9c8a282c15677e1894501a52425cf (built from that source; default configuration — no TLS, no authentication)
+- Environment: isolated local lab — one pd-server built from the pinned PD sources plus one tikv-server, loopback only; client = grpcurl with the kvproto definitions this version pins (kvproto @ 07aa8c6)
+
+VULNERABILITY DETAILS
+- Weakness: path traversal on a destructive filesystem operation (CWE-22 Path Traversal; secondary CWE-73 External Control of File Name or Path)
+- Required privileges: none (network reachability of port 20160)
+- Entry point: import_sstpb.ImportSST/ClearFiles
+- Trust boundary crossed: unauthenticated network peer → server filesystem
+- Measured unsafe effect: recursive deletion (remove_dir_all) of an attacker-chosen directory outside the import directory
+
+ROOT CAUSE
+components/sst_importer/src/sst_importer.rs:350-357:
+  pub fn remove_dir(&self, prefix: &str) -> Result<()> {
+      let path = self.dir.get_root_dir().join(prefix);   // absolute prefix replaces the base
+      if path.exists() {
+          file_system::remove_dir_all(&path)?;           // recursive deletion, unvalidated
+There is no validation of prefix: no canonicalization check that the result stays under the import root, no allow-list. Path::join semantics make an absolute prefix (/tmp/...) or any ../ sequence sufficient to escape. Source: https://github.com/tikv/tikv/blob/a1fdd6a59bb9c8a282c15677e1894501a52425cf/components/sst_importer/src/sst_importer.rs#L350-L357 (called from the ClearFiles handler in src/import/sst_service.rs)
+
+REPRODUCTION
+1. Create a victim directory on the server host: mkdir -p /tmp/tikv_victim/sub && echo proof > /tmp/tikv_victim/sub/proof.txt
+2. Send one unauthenticated request:
+   grpcurl -plaintext -import-path $KVPROTO/proto -import-path $KVPROTO/include -proto import_sstpb.proto -d '{"prefix":"/tmp/tikv_victim"}' 127.0.0.1:20160 import_sstpb.ImportSST/ClearFiles
+3. List /tmp/tikv_victim — the directory and its contents are gone. The server responds {} (success) and continues serving normally.
+
+Observed (recorded in the PoC gist):
+  client response: {}
+  ls -la /tmp/tikv_victim /tmp/tikv_victim/sub
+  ls: cannot access '/tmp/tikv_victim': No such file or directory
+  ls: cannot access '/tmp/tikv_victim/sub': No such file or directory
+The before listing shows sub/proof.txt existed before the request.
+
+NEGATIVE CONTROL
+The same method with a benign relative prefix performs its documented behavior (clears files inside the import directory only); nothing outside the attacker-supplied path was touched in the lab, isolating the traversal payload as the cause.
+
+Note: no testing was performed against any live infrastructure; all reproduction was on an isolated local lab built from the pinned sources.
+
+Impact:
+An unauthenticated network peer can delete any directory the tikv-server user can delete, on the host running tikv-server. Demonstrated: a directory outside the import directory (/tmp/tikv_victim with contents) was removed by one gRPC request carrying prefix="/tmp/tikv_victim"; the server returned success and kept serving, so the destruction is silent.
+
+Concrete worst cases within the demonstrated primitive:
+- Deleting the store's own data directory while tikv-server is running (writable by the tikv-server user) — total storage unavailability.
+- Deleting any other application's or user's data directory on the same host.
+
+Evidence limits: the lab demonstration used a harmless /tmp directory to satisfy the minimum-verification rule; deletion of the store's own data directory was not executed and is stated only as the achievable worst case of the same primitive. No file-content disclosure is claimed.
+
+Severity: CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:H/A:H = 9.1 (Critical) — unauthenticated network attacker, deterministic, destroys integrity and availability of server-side data at attacker-chosen paths.
+
+Remediation: canonicalize the joined path and reject any result that does not start with the import root; reject absolute prefixes and any ".." component outright; require authentication for destructive import-service operations.
+
+Proof of Concept:
+(See the proof-of-concept files included in this folder.)

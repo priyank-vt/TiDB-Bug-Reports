@@ -1,0 +1,4 @@
+total 4
+drwxrwxr-x 2 lenovo lenovo 60 Sep 6 01:13 .
+drwxrwxr-x 3 lenovo lenovo 60 Sep 6 01:13 ..
+-rw-rw-r-- 1 lenovo lenovo 6 Sep 6 01:14 proof.txt
