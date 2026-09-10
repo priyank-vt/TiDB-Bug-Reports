@@ -1,0 +1,13 @@
+=== TIDB-SESSSTATE-01 E2E retest 2026-09-05T21:51:28-05:00 ===
+--- step 1: worker authenticates normally, mints session token ---
+{"expire-time": "2026-09-05T21:52:28.915793322-05:00", "sign-time": "2026-09-05T21:51:28.915793322-05:00", "signature": "MEUCIQDSVcOuMaHCYQmtzKcGcYB8SeLOLLS2nCvmhfQwj1DY9gIgfIYwMjsQJJ3HgmTLeEd/r3x/1IH ...
+--- step 2: admin expires the password (account suspension control) ---
+expire_exit=0
+--- step 3 [negative control]: normal password login now DENIED ---
+ERROR 1862 (HY000): Your password has expired. To log in you must change it using a client that supports expired passwords.
+--- step 4: raw handshake with auth plugin tidb_session_token + captured token ---
+OK
+--- step 5 [contrast]: same handshake with mysql_native_password ---
+ERR: 1504 ss denied for user 'worker'@'127.0.0.1' (using password: YES)
+step 4b: auth: OK
+step 5b: query executed in bypass session: worker@%

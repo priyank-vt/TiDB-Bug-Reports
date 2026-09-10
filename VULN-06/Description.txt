@@ -1,1 +1,61 @@
+Title: tidb_session_token logins bypass password-expiry and sandbox enforcement, keeping a suspended account usable
 
+Weakness: Improper Authentication - Generic (CWE-287)
+
+Asset in Scope: TiDB product, such as TiKV, TiDB, TiFlash, PD
+
+Description:
+ALTER USER ... PASSWORD EXPIRE is the control an administrator uses to cut off an account's normal logins — for example after credential leaks or staff departure — until the password is reset. TiDB additionally ships a session-migration login plugin, tidb_session_token, used by proxies such as TiProxy: a client authenticates with a short-lived signed token instead of a password.
+
+The verification shows that this token login path skips the password-expiry and sandbox-mode enforcement entirely. In the recorded sequence, the user 'worker' minted a session token, an administrator expired the password, the normal login then failed with ERROR 1862, and a raw MySQL handshake carrying the token as tidb_session_token was accepted (OK packet) — after which SELECT CURRENT_USER() executed over that connection and returned worker@%. A suspended account therefore remains fully usable by anyone holding one of its session tokens.
+
+The token is bound to the username and valid for 60 seconds, and minting requires a prior authenticated session, so there is no cross-user escalation; the defect is the bypass of the administrator's suspension control.
+
+AFFECTED PRODUCT
+- Product: TiDB (tidb-server)
+- Component: authentication layer, tidb_session_token plugin / session-states migration
+- Version tested: v26.3.10, commit 6b4c9f9dce2118aca580a16ef49bd791f4e12b3a
+- Environment: single-node local lab (own test data), MySQL on port 4100; server started with security.session-token-signing-cert/key configured (the deployment mode in which this plugin is used, e.g. behind TiProxy)
+
+VULNERABILITY DETAILS
+- Class: Improper Authentication (CWE-287) — authentication-state policy not enforced on one auth path
+- Required privileges: possession of a session token for the target account (requires one prior successful authentication as that user)
+- Entry point: MySQL handshake with auth plugin name tidb_session_token, auth payload = the token JSON
+- Trust boundary crossed: administrator account-control (PASSWORD EXPIRE / sandbox mode) -> session-token holders
+- Root cause: the token plugin is 'always permitted and skips stored user plugin': https://github.com/pingcap/tidb/blob/6b4c9f9dce2118aca580a16ef49bd791f4e12b3a/pkg/server/conn.go#L879-L881 ; and the privilege verification skips CheckPasswordExpired and sandbox-mode evaluation when the plugin is tidb_session_token: https://github.com/pingcap/tidb/blob/6b4c9f9dce2118aca580a16ef49bd791f4e12b3a/pkg/privilege/privileges/privileges.go#L630-L632 and https://github.com/pingcap/tidb/blob/6b4c9f9dce2118aca580a16ef49bd791f4e12b3a/pkg/privilege/privileges/privileges.go#L721-L724
+- A fresh token can be minted from any live session (SHOW SESSION_STATES), so each accepted token login renews the ability to stay logged in for as long as the account remains in that state.
+
+REPRODUCTION STEPS
+1. As worker: SHOW SESSION_STATES; — copy the Session_token JSON (username, sign-time, expire-time, signature).
+2. Admin: ALTER USER 'worker'@'%' PASSWORD EXPIRE;
+3. Control: normal login -> ERROR 1862 (HY000): Your password has expired...
+4. Exploit: raw handshake (HandshakeResponse41) with username worker, client auth plugin tidb_session_token, auth payload = the 242-byte token JSON -> server returns OK.
+5. Over the same connection: SELECT CURRENT_USER(); -> worker@%
+
+BASELINE BEHAVIOR
+An expired-password account rejects normal logins with ERROR 1862 and enters sandbox mode until the password is changed — the control the administrator exercised.
+
+OBSERVED RESULT
+step 3: normal login -> ERROR 1862 (HY000): Your password has expired...
+step 4: token handshake -> OK
+step 4b: same handshake again -> OK
+step 5b: SELECT CURRENT_USER() over the token connection -> worker@%
+step 5: contrast handshake with mysql_native_password -> Access denied for user 'worker'@'127.0.0.1' (using password: YES)
+
+NEGATIVE CONTROL
+Both controls fail for the same expired account (normal client ERROR 1862; raw handshake with mysql_native_password denied) while the token path succeeds — the bypass is isolated to the skipped expiry/sandbox checks on the token path.
+
+Full transcript and handshake script:
+(See the proof-of-concept files included in this folder.)
+
+Impact:
+An administrator's PASSWORD EXPIRE (and the associated sandbox mode) does not stop holders of the account's session token from continuing to use the account with full SQL access, and each such session can mint a new token (SHOW SESSION_STATES), so the suspension never takes effect for them.
+
+Scope is bounded: the attacker must already have held a valid session token for that same account within the last 60 seconds; no cross-user access was demonstrated.
+
+Severity per program rating: Medium ('standard logic or workflow defects creating security risk').
+
+Fix guidance: apply CheckPasswordExpired and sandbox-mode evaluation to tidb_session_token logins as well (drop the special case in the privilege verification), and/or invalidate outstanding session tokens for an account when PASSWORD EXPIRE or ALTER USER ... LOCK is executed.
+
+Proof of Concept:
+(See the proof-of-concept files included in this folder.)
