@@ -1,0 +1,11 @@
+=== TIDB-IS-RUNAWAY-01 E2E retest 2026-09-05T21:50:19-05:00 ===
+--- [negative control] attacker before watch exists ---
+rows_before
+1
+--- [setup, admin] resource group runaway config + QUERY WATCH ADD (in-memory rule) ---
+WATCH_ID
+30001
+setup_exit=0
+--- exploit: attacker reads admin watch rule with literal ---
+WATCH	WATCH_TEXT	SOURCE
+Exact	SELECT balance FROM fintech.accounts WHERE acct_no = "AAAA-BBBB-0007"	manual

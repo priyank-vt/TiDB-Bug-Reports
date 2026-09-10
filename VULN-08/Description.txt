@@ -1,1 +1,50 @@
-TBD
+Title: INFORMATION_SCHEMA.RUNAWAY_WATCHES discloses administrators' watch-rule SQL texts (with literals) to unprivileged users
+
+Weakness: Missing Authorization (CWE-862)
+
+Asset in Scope: TiDB product, such as TiKV, TiDB, TiFlash, PD
+
+Description:
+QUERY WATCH ADD ... SQL TEXT EXACT TO '...' is how TiDB operators blacklist a specific harmful query — and the rule text they register is typically copied verbatim from a real production statement, including its literal values. The INFORMATION_SCHEMA.RUNAWAY_WATCHES table exposes those rule texts, and in TiDB v26.3.10 it does so to every authenticated user, regardless of grants.
+
+In the verification, an administrator registered the exact rule 'SELECT balance FROM fintech.accounts WHERE acct_no = "AAAA-BBBB-0007"'; a zero-grant user then selected that full statement, including the account-number literal, from RUNAWAY_WATCHES. The newly added rule (WATCH_ID 30001) was immediately readable by the unprivileged user. (The table also held 1 pre-existing rule row from an earlier run — recorded honestly in the transcript.)
+
+AFFECTED PRODUCT
+- Product: TiDB (tidb-server)
+- Component: INFORMATION_SCHEMA pseudo-table RUNAWAY_WATCHES
+- Version tested: v26.3.10, commit 6b4c9f9dce2118aca580a16ef49bd791f4e12b3a
+- Environment: single-node local lab (own test data), MySQL on port 4100
+
+VULNERABILITY DETAILS
+- Class: Missing Authorization (CWE-862) on a diagnostic pseudo-table
+- Required privileges: any authenticated user; the reading account held GRANT USAGE ON *.* only
+- Entry point: SELECT WATCH, WATCH_TEXT, SOURCE FROM INFORMATION_SCHEMA.RUNAWAY_WATCHES
+- Trust boundary crossed: operator-defined security rules -> any authenticated user
+- Root cause: the retriever appends every row of the global runaway watch list, including watch.WatchText, with no PROCESS/ownership filter: https://github.com/pingcap/tidb/blob/6b4c9f9dce2118aca580a16ef49bd791f4e12b3a/pkg/executor/infoschema_reader.go#L3875-L3903
+
+REPRODUCTION STEPS
+1. (admin setup) ALTER RESOURCE GROUP default QUERY_LIMIT=(EXEC_ELAPSED="1h", ACTION=DRYRUN, WATCH=EXACT); then QUERY WATCH ADD SQL TEXT EXACT TO 'SELECT balance FROM fintech.accounts WHERE acct_no = "AAAA-BBBB-0007"'; (server returned WATCH_ID 30001)
+2. Attacker: SELECT WATCH, WATCH_TEXT, SOURCE FROM INFORMATION_SCHEMA.RUNAWAY_WATCHES;
+
+BASELINE BEHAVIOR
+Every other SQL-text-bearing diagnostic table (processlist, slow query, statements summary) hides other users' rows from callers without PROCESS. No such gate exists here.
+
+OBSERVED RESULT
+WATCH   WATCH_TEXT                                                              SOURCE
+Exact   SELECT balance FROM fintech.accounts WHERE acct_no = "AAAA-BBBB-0007"   manual
+
+NEGATIVE CONTROL
+The zero-grant attacker cannot read the table the rule was derived from: SELECT balance FROM fintech.accounts ... is denied over SQL with ERROR 1142, and all other query-text tables filter behind PROCESS. Only RUNAWAY_WATCHES returns the operator's literal-bearing rule text to a USAGE-only user.
+
+Full SQL transcript:
+(See the proof-of-concept files included in this folder.)
+
+Impact:
+Every authenticated user can read operators' watch rules, which contain verbatim production SQL statements and their literals (identifiers, account numbers, filter values). This is minor information disclosure with a direct path to sensitive-value exposure whenever operators blacklist data-touching queries.
+
+Severity per program rating: Low ('minor information disclosure').
+
+Fix guidance: gate RUNAWAY_WATCHES behind PROCESS (or a super-like dynamic privilege) consistent with the other SQL-text-bearing diagnostic tables, or strip WATCH_TEXT for unprivileged callers.
+
+Proof of Concept:
+(See the proof-of-concept files included in this folder.)
