@@ -1,0 +1,170 @@
+########## TIDB-SESSSTATE-01 fresh E2E 2026-09-07T12:07:38Z
+--- step 1: worker logs in and mints a session token ---
+{"rs-group": "default", "status": 2, "sys-vars": {"allow_auto_random_explicit_insert": "OFF", "auto_increment_increment": "1", "auto_increment_offset": "1", "autocommit": "ON", "block_encryption_mode": "aes-128-ecb", "character_set_client": "utf8mb4", "character_set_connection": "utf8mb4", "character_set_results": "utf8mb4", "character_set_server": "utf8mb4", "collation_connection": "utf8mb4_general_ci", "collation_server": "utf8mb4_bin", "cte_max_recursion_depth": "1000", "default_collation_for_utf8mb4": "utf8mb4_bin", "default_week_format": "0", "div_precision_increment": "4", "foreign_key_checks": "ON", "group_concat_max_len": "1024", "innodb_lock_wait_timeout": "50", "interactive_timeout": "28800", "max_allowed_packet": "67108864", "max_execution_time": "0", "mpp_exchange_compression_mode": "UNSPECIFIED", "mpp_version": "UNSPECIFIED", "rand_seed1": "25356983", "rand_seed2": "694236371", "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION", "sql_require_primary_key": "OFF", "sql_select_limit": "18446744073709551615", "tidb_adaptive_closest_read_threshold": "4096", "tidb_allow_batch_cop": "1", "tidb_allow_fallback_to_tikv": "", "tidb_allow_mpp": "ON", "tidb_allow_remove_auto_inc": "OFF", "tidb_allow_tiflash_cop": "OFF", "tidb_analyze_distsql_scan_concurrency": "4", "tidb_analyze_partition_concurrency": "2", "tidb_analyze_skip_column_types": "json,blob,mediumblob,longblob,mediumtext,longtext", "tidb_analyze_version": "2", "tidb_backoff_lock_fast": "10", "tidb_backoff_weight": "2", "tidb_batch_commit": "OFF", "tidb_batch_delete": "OFF", "tidb_batch_insert": "OFF", "tidb_batch_pending_tiflash_count": "4000", "tidb_broadcast_join_threshold_count": "10240", "tidb_broadcast_join_threshold_size": "104857600", "tidb_build_sampling_stats_concurrency": "2", "tidb_build_stats_concurrency": "2", "tidb_cdc_write_source": "0", "tidb_checksum_table_concurrency": "4", "tidb_constraint_check_in_place": "OFF", "tidb_constraint_check_in_place_pessimistic": "ON", "tidb_cost_model_version": "2", "tidb_ddl_reorg_batch_size": "256", "tidb_ddl_reorg_worker_cnt": "4", "tidb_default_string_match_selectivity": "0.8", "tidb_disable_txn_auto_retry": "ON", "tidb_distsql_scan_concurrency": "15", "tidb_dml_batch_size": "0", "tidb_dml_type": "STANDARD", "tidb_enable_1pc": "OFF", "tidb_enable_analyze_snapshot": "OFF", "tidb_enable_async_commit": "OFF", "tidb_enable_async_merge_global_stats": "ON", "tidb_enable_auto_increment_in_generated": "OFF", "tidb_enable_cascades_planner": "OFF", "tidb_enable_chunk_rpc": "ON", "tidb_enable_clustered_index": "ON", "tidb_enable_exchange_partition": "ON", "tidb_enable_extended_stats": "OFF", "tidb_enable_external_ts_read": "OFF", "tidb_enable_fast_analyze": "OFF", "tidb_enable_fast_table_check": "ON", "tidb_enable_global_index": "ON", "tidb_enable_index_merge": "ON", "tidb_enable_index_merge_join": "OFF", "tidb_enable_inl_join_inner_multi_pattern": "ON", "tidb_enable_lazy_cursor_fetch": "OFF", "tidb_enable_legacy_instance_scope": "ON", "tidb_enable_list_partition": "ON", "tidb_enable_mutation_checker": "ON", "tidb_enable_new_cost_interface": "ON", "tidb_enable_new_only_full_group_by_check": "OFF", "tidb_enable_non_prepared_plan_cache": "OFF", "tidb_enable_non_prepared_plan_cache_for_dml": "ON", "tidb_enable_noop_functions": "OFF", "tidb_enable_null_aware_anti_join": "ON", "tidb_enable_ordered_result_mode": "OFF", "tidb_enable_outer_join_reorder": "ON", "tidb_enable_paging": "ON", "tidb_enable_parallel_apply": "OFF", "tidb_enable_parallel_hashagg_spill": "ON", "tidb_enable_pipelined_window_function": "ON", "tidb_enable_plan_cache_for_param_limit": "ON", "tidb_enable_plan_cache_for_subquery": "ON", "tidb_enable_plan_replayer_capture": "ON", "tidb_enable_plan_replayer_continuous_capture": "OFF", "tidb_enable_point_get_cache": "OFF", "tidb_enable_prepared_plan_cache": "ON", "tidb_enable_prepared_plan_cache_memory_monitor": "ON", "tidb_enable_pseudo_for_outdated_stats": "OFF", "tidb_enable_rate_limit_action": "OFF", "tidb_enable_reuse_chunk": "ON", "tidb_enable_shared_lock_promotion": "OFF", "tidb_enable_strict_double_type_check": "ON", "tidb_enable_table_partition": "ON", "tidb_enable_tiflash_read_for_write_stmt": "ON", "tidb_enable_unsafe_substitute": "OFF", "tidb_enable_vectorized_expression": "ON", "tidb_enable_window_function": "ON", "tidb_enforce_mpp": "OFF", "tidb_evolve_plan_baselines": "OFF", "tidb_executor_concurrency": "5", "tidb_foreign_key_check_in_shared_lock": "OFF", "tidb_guarantee_linearizability": "ON", "tidb_hash_exchange_with_new_collation": "ON", "tidb_hash_join_concurrency": "-1", "tidb_hash_join_version": "optimized", "tidb_hashagg_final_concurrency": "-1", "tidb_hashagg_partial_concurrency": "-1", "tidb_idle_transaction_timeout": "0", "tidb_ignore_prepared_cache_close_stmt": "OFF", "tidb_index_join_batch_size": "25000", "tidb_index_join_double_read_penalty_cost_rate": "0", "tidb_index_lookup_concurrency": "-1", "tidb_index_lookup_join_concurrency": "-1", "tidb_index_lookup_pushdown_policy": "hint-only", "tidb_index_lookup_size": "20000", "tidb_index_merge_intersection_concurrency": "-1", "tidb_index_serial_scan_concurrency": "1", "tidb_init_chunk_size": "32", "tidb_isolation_read_engines": "tikv,tiflash,tidb", "tidb_load_based_replica_read_threshold": "1s", "tidb_lock_unchanged_keys": "ON", "tidb_low_resolution_tso": "OFF", "tidb_max_bytes_before_tiflash_external_group_by": "-1", "tidb_max_bytes_before_tiflash_external_join": "-1", "tidb_max_bytes_before_tiflash_external_sort": "-1", "tidb_max_chunk_size": "1024", "tidb_max_dist_task_nodes": "-1", "tidb_max_paging_size": "50000", "tidb_max_tiflash_threads": "-1", "tidb_mem_arbitrator_query_reserved": "0", "tidb_mem_arbitrator_wait_averse": "0", "tidb_mem_quota_apply_cache": "33554432", "tidb_mem_quota_query": "1073741824", "tidb_memory_debug_mode_alarm_ratio": "0", "tidb_memory_debug_mode_min_heap_inuse": "0", "tidb_merge_join_concurrency": "1", "tidb_merge_partition_stats_concurrency": "1", "tidb_min_paging_size": "128", "tidb_mpp_store_fail_ttl": "0s", "tidb_multi_statement_mode": "OFF", "tidb_non_prepared_plan_cache_size": "100", "tidb_nontransactional_ignore_error": "OFF", "tidb_opt_advanced_join_hint": "ON", "tidb_opt_agg_push_down": "OFF", "tidb_opt_always_keep_join_key": "ON", "tidb_opt_broadcast_cartesian_join": "1", "tidb_opt_cartesian_join_order_threshold": "0", "tidb_opt_concurrency_factor": "3", "tidb_opt_copcpu_factor": "3", "tidb_opt_correlation_exp_factor": "1", "tidb_opt_correlation_threshold": "0.9", "tidb_opt_cpu_factor": "3", "tidb_opt_derive_topn": "OFF", "tidb_opt_desc_factor": "3", "tidb_opt_disk_factor": "1.5", "tidb_opt_distinct_agg_push_down": "OFF", "tidb_opt_enable_advanced_join_reorder": "ON", "tidb_opt_enable_alternative_logical_plans": "OFF", "tidb_opt_enable_correlation_adjustment": "ON", "tidb_opt_enable_fuzzy_binding": "OFF", "tidb_opt_enable_hash_join": "ON", "tidb_opt_enable_late_materialization": "ON", "tidb_opt_enable_mpp_shared_cte_execution": "OFF", "tidb_opt_enable_no_decorrelate_in_select": "OFF", "tidb_opt_enable_non_eval_scalar_subquery": "OFF", "tidb_opt_enable_semi_join_rewrite": "OFF", "tidb_opt_enable_three_stage_multi_distinct_agg": "OFF", "tidb_opt_fix_control": "", "tidb_opt_force_inline_cte": "OFF", "tidb_opt_group_ndv_skew_ratio": "0", "tidb_opt_hash_agg_cost_factor": "1", "tidb_opt_hash_join_cost_factor": "1", "tidb_opt_index_join_build_v2": "ON", "tidb_opt_index_join_cost_factor": "1", "tidb_opt_index_lookup_cost_factor": "1", "tidb_opt_index_merge_cost_factor": "1", "tidb_opt_index_prune_threshold": "20", "tidb_opt_index_reader_cost_factor": "1", "tidb_opt_index_scan_cost_factor": "1", "tidb_opt_insubq_to_join_and_agg": "ON", "tidb_opt_join_reorder_threshold": "0", "tidb_opt_join_reorder_through_sel": "OFF", "tidb_opt_limit_cost_factor": "1", "tidb_opt_limit_push_down_threshold": "5000", "tidb_opt_memory_factor": "0.001", "tidb_opt_merge_join_cost_factor": "1", "tidb_opt_mpp_outer_join_fixed_build_side": "OFF", "tidb_opt_network_factor": "1", "tidb_opt_objective": "moderate", "tidb_opt_ordering_index_selectivity_ratio": "0.01", "tidb_opt_ordering_index_selectivity_threshold": "0", "tidb_opt_partial_ordered_index_for_topn": "DISABLE", "tidb_opt_prefer_range_scan": "ON", "tidb_opt_prefix_index_single_scan": "ON", "tidb_opt_projection_push_down": "ON", "tidb_opt_range_max_size": "67108864", "tidb_opt_risk_eq_skew_ratio": "0", "tidb_opt_risk_range_skew_ratio": "0", "tidb_opt_scale_ndv_skew_ratio": "1", "tidb_opt_scan_factor": "1.5", "tidb_opt_selectivity_factor": "0.8", "tidb_opt_skew_distinct_agg": "OFF", "tidb_opt_sort_cost_factor": "1", "tidb_opt_stream_agg_cost_factor": "1", "tidb_opt_table_full_scan_cost_factor": "1", "tidb_opt_table_range_scan_cost_factor": "1", "tidb_opt_table_reader_cost_factor": "1", "tidb_opt_table_rowid_scan_cost_factor": "1", "tidb_opt_table_tiflash_scan_cost_factor": "1", "tidb_opt_three_stage_distinct_agg": "ON", "tidb_opt_topn_cost_factor": "1", "tidb_opt_use_invisible_indexes": "OFF", "tidb_opt_write_row_id": "OFF", "tidb_optimizer_selectivity_level": "0", "tidb_paging_size_bytes": "0", "tidb_partition_prune_mode": "dynamic", "tidb_pessimistic_txn_fair_locking": "ON", "tidb_pipelined_dml_resource_policy": "standard", "tidb_placement_mode": "STRICT", "tidb_plan_cache_invalidation_on_fresh_stats": "ON", "tidb_plan_cache_max_plan_size": "2097152", "tidb_plan_cache_skip_stats_on_binding": "ON", "tidb_pre_split_regions": "0", "tidb_prefer_broadcast_join_by_exchange_data_size": "OFF", "tidb_prepared_plan_cache_size": "100", "tidb_projection_concurrency": "-1", "tidb_rc_write_check_ts": "OFF", "tidb_read_consistency": "strict", "tidb_read_staleness": "0", "tidb_redact_log": "OFF", "tidb_regard_null_as_point": "ON", "tidb_remove_orderby_in_subquery": "ON", "tidb_replica_read": "leader", "tidb_request_source_type": "", "tidb_retry_limit": "10", "tidb_row_format_version": "2", "tidb_runtime_filter_mode": "OFF", "tidb_runtime_filter_type": "IN", "tidb_scatter_region": "", "tidb_session_alias": "", "tidb_session_plan_cache_size": "100", "tidb_shard_allocate_step": "9223372036854775807", "tidb_shard_row_id_bits": "0", "tidb_skip_ascii_check": "OFF", "tidb_skip_isolation_level_check": "OFF", "tidb_skip_missing_partition_stats": "ON", "tidb_skip_utf8_check": "OFF", "tidb_slow_log_rules": "", "tidb_slow_txn_log_threshold": "0", "tidb_stats_load_sync_wait": "100", "tidb_stats_update_during_ddl": "OFF", "tidb_store_batch_size": "4", "tidb_streamagg_concurrency": "1", "tidb_sysdate_is_now": "OFF", "tidb_tmp_table_max_size": "67108864", "tidb_track_aggregate_memory_usage": "ON", "tidb_txn_assertion_level": "FAST", "tidb_txn_entry_size_limit": "0", "tidb_txn_mode": "pessimistic", "tidb_use_plan_baselines": "ON", "tidb_window_concurrency": "-1", "tiflash_compute_dispatch_policy": "consistent_hash", "tiflash_fastscan": "OFF", "tiflash_fine_grained_shuffle_batch_size": "8192", "tiflash_fine_grained_shuffle_stream_count": "0", "tiflash_hash_join_version": "legacy", "tiflash_hashagg_preaggregation_mode": "force_preagg", "tiflash_mem_quota_query_per_node": "0", "tiflash_query_spill_ratio": "0.7", "tiflash_replica_read": "all_replicas", "tikv_client_read_timeout": "0", "time_zone": "SYSTEM", "transaction_isolation": "REPEATABLE-READ", "tx_isolation": "REPEATABLE-READ", "tx_read_ts": "", "wait_timeout": "28800", "windowing_use_high_precision": "ON"}} {"expire-time": "2026-09-07T07:08:38.438618187-05:00", "sign-time": "2026-09-07T07:07:38.438618187-05:00", "signature": "uGmOjAxileBavAtGM21Mw/eSGRBlSyeEJU2E/wjuECUazEk5omXrH3DYOsc/ixw7HCr+g7HFiMk8SjtxWeO+leuaxu60sYhl7OKeaRfvr4RZDvcJtE221oYZZWhvYC0ic1n9ZdzxBf0ngAHX2CjsgIKu6aiQhORHi+KjwwqTYxZonk/ZP+J0sd6ItK4wbjYvW6Rw423QNJnyo0XEN7s6yfOhePs0Wp0C11e41fjwYxb0XvPgsp33sg4QAzUH+TKEzz++ngCf0XmLqvaCCy6GtLjLzag9VZv7rieiPfFdxY87Dzhj76FU6gMuVPaDVWioxS5+WPj9GKHMO9KSXH03XA==", "username": "worker"}
+490 <lab-evidence-dir>/_reverify-0907/L5-sessstate/token.json
+
+--- step 2: admin expires worker's password ---
+alter_exit=0
+--- step 3: negative control - normal login ---
+ERROR 1862 (HY000): Your password has expired. To log in you must change it using a client that supports expired passwords.
+--- step 4: exploit - raw handshake with tidb_session_token ---
+# user=worker plugin=tidb_session_token auth_bytes=489
+Traceback (most recent call last):
+  File "<lab-evidence-dir>/_reverify-0907/L5-sessstate/token_login.py", line 88, in <module>
+    sys.exit(handshake(user, plugin, auth, query))
+             ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<lab-evidence-dir>/_reverify-0907/L5-sessstate/token_login.py", line 46, in handshake
+    resp += bytes([len(auth_data)]) + auth_data
+            ~~~~~^^^^^^^^^^^^^^^^^^
+ValueError: bytes must be in range(0, 256)
+--- step 5: CURRENT_USER over the token connection ---
+  File "<lab-evidence-dir>/_reverify-0907/L5-sessstate/token_login.py", line 88, in <module>
+    sys.exit(handshake(user, plugin, auth, query))
+             ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<lab-evidence-dir>/_reverify-0907/L5-sessstate/token_login.py", line 46, in handshake
+    resp += bytes([len(auth_data)]) + auth_data
+            ~~~~~^^^^^^^^^^^^^^^^^^
+ValueError: bytes must be in range(0, 256)
+--- step 6: contrast - same handshake declaring mysql_native_password ---
+# user=worker plugin=mysql_native_password auth_bytes=489
+Traceback (most recent call last):
+  File "<lab-evidence-dir>/_reverify-0907/L5-sessstate/token_login.py", line 88, in <module>
+    sys.exit(handshake(user, plugin, auth, query))
+             ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<lab-evidence-dir>/_reverify-0907/L5-sessstate/token_login.py", line 46, in handshake
+    resp += bytes([len(auth_data)]) + auth_data
+            ~~~~~^^^^^^^^^^^^^^^^^^
+ValueError: bytes must be in range(0, 256)
+--- restore worker, mint FRESH token, then expire (all inside token validity) ---
+token_bytes=490
+--- step 3 (repeat): normal login on expired account ---
+ERROR 1862 (HY000): Your password has expired. To log in you must change it using a client that supports expired passwords.
+--- step 4: exploit - raw handshake tidb_session_token ---
+# user=worker plugin=tidb_session_token auth_bytes=489
+OK
+--- step 5: CURRENT_USER over the token connection ---
+# user=worker plugin=tidb_session_token auth_bytes=489
+=== re-run with fresh token 2026-09-07T12:14:50Z ===
+token_bytes=488, expired at 2026-09-07T12:14:50Z
+--- step 3: normal login ---
+ERROR 1862 (HY000): Your password has expired. To log in you must change it using a client that supports expired passwords.
+--- step 4: token handshake ---
+# user=worker plugin=tidb_session_token auth_bytes=487
+OK
+--- step 5: CURRENT_USER over token connection ---
+# user=worker plugin=tidb_session_token auth_bytes=487
+--- step 6: contrast plugin ---
+# user=worker plugin=mysql_native_password auth_bytes=487
+ERR code=1045: #28000Access denied for user 'worker'@'127.0.0.1' (using password: YES)
+auth reply: seq 2 payload 00000002 -> OK
+column count: 1
+ROW: ['def', '', '', '', 'CURRENT_USER()', '', '.\x00\x00\x01\x00\x00�\x01\x00\x1f\x00\x00']
+ROW: ['worker@%']
+conn end: TimeoutError
+
+===== raw handshake client used (token_login.py) =====
+#!/usr/bin/env python3
+"""Raw MySQL handshake client for testing the tidb_session_token auth plugin.
+Usage: token_login.py <user> <plugin_name> <token_file> [--query "SQL"]
+Connects to 127.0.0.1:4100, declares <plugin_name>, sends the token file content
+as the auth response, prints OK/ERR, and optionally runs one COM_QUERY."""
+import socket, struct, sys
+
+def read_packet(s):
+    hdr = b""
+    while len(hdr) < 4:
+        hdr += s.recv(4 - len(hdr))
+    ln = hdr[0] | hdr[1] << 8 | hdr[2] << 16
+    seq = hdr[3]
+    payload = b""
+    while len(payload) < ln:
+        payload += s.recv(ln - len(payload))
+    return seq, payload
+
+def send_packet(s, seq, payload):
+    s.sendall(struct.pack("<I", len(payload))[:3] + bytes([seq]) + payload)
+
+def parse_greeting(p):
+    i = 1
+    while p[i] != 0: i += 1  # server version
+    i += 1  # NUL
+    i += 4  # thread id
+    part1 = p[i:i+8]; i += 8
+    i += 1  # filler
+    caps = p[i] | p[i+1] << 8; i += 2  # capability lower
+    i += 1 + 2 + 2  # charset, status, capability upper
+    alen = p[i]; i += 1
+    i += 10  # reserved
+    n2 = max(13, alen - 8)
+    part2 = p[i:i+n2]
+    i += n2
+    plugin = p[i:].rstrip(b"\x00").decode()
+    return caps, plugin
+
+def handshake(user, plugin, auth_data, query=None):
+    s = socket.create_connection(("127.0.0.1", 4100), timeout=10)
+    seq, p = read_packet(s)
+    _, server_plugin = parse_greeting(p)
+    caps = 0x1 | 0x200 | 0x2000 | 0x8000 | 0x80000 | 0x200000  # ...|PLUGIN_AUTH|PLUGIN_AUTH_LENENC_CLIENT_DATA
+    resp = struct.pack("<IIB23x", caps, 1 << 24, 45)
+    resp += user.encode() + b"\x00"
+    if len(auth_data) < 251:
+        resp += bytes([len(auth_data)]) + auth_data
+    else:
+        resp += b"\xFC" + struct.pack("<H", len(auth_data)) + auth_data
+    resp += plugin.encode() + b"\x00"
+    send_packet(s, seq + 1, resp)
+    seq, p = read_packet(s)
+    while p[0] == 0xFE and len(p) > 1:  # AuthSwitchRequest: replay same payload
+        send_packet(s, seq + 1, auth_data)
+        seq, p = read_packet(s)
+    if p[0] == 0x00:
+        print("OK")
+        if query:
+            s.settimeout(5)
+            send_packet(s, 0, b"\x03" + query.encode())  # sequence resets to 0 per command
+            rows = []
+            ncols = None
+            try:
+                while True:
+                    seq, p = read_packet(s)
+                    if p[0] == 0xFF:
+                        print("ERR:", p[3:].decode(errors="replace")); break
+                    if p[0] == 0xFE and len(p) < 9:  # EOF
+                        if ncols is None:
+                            continue  # EOF after column defs
+                        else:
+                            break  # EOF after last row
+                    if ncols is None:
+                        ncols = p[0]; continue
+                    # text row: lenenc strings; take first column value
+                    i, vals = 0, []
+                    while i < len(p):
+                        n = p[i]; i += 1
+                        vals.append(p[i:i+n].decode(errors="replace")); i += n
+                    rows.append(vals)
+            except socket.timeout:
+                pass
+            for r in rows:
+                print("ROW:", r)
+            if rows or ncols is not None:
+                print(f"(result set: {len(rows)} rows, {ncols} columns)")
+        s.close()
+        return 0
+    elif p[0] == 0xFF:
+        code = p[1] | p[2] << 8
+        print(f"ERR code={code}: {p[3:].decode(errors='replace')}")
+        s.close()
+        return 2
+    print(f"UNEXPECTED packet: {p[:40].hex()}")
+    s.close()
+    return 3
+
+if __name__ == "__main__":
+    user, plugin, token_file = sys.argv[1], sys.argv[2], sys.argv[3]
+    query = None
+    if len(sys.argv) > 4 and sys.argv[4] == "--query":
+        query = sys.argv[5]
+    auth = open(token_file, "rb").read().strip()
+    print(f"# user={user} plugin={plugin} auth_bytes={len(auth)}", file=sys.stderr)
+    sys.exit(handshake(user, plugin, auth, query))

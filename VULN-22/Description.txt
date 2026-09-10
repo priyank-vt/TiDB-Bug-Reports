@@ -1,1 +1,64 @@
-TBD
+Title: tidb_session_token logins bypass password-expiry and sandbox enforcement, keeping a suspended account usable
+
+Weakness: Improper Authentication - Generic (CWE-287)
+
+Asset in Scope: TiDB product, such as TiKV, TiDB, TiFlash, PD
+
+Description:
+SUMMARY
+
+ALTER USER ... PASSWORD EXPIRE is the control an administrator uses to cut off an account's normal logins - for example after credential leaks or staff departure - until the password is reset. TiDB additionally ships a session-migration login plugin, tidb_session_token, used by proxies such as TiProxy: a client authenticates with a short-lived signed token instead of a password.
+
+The verification shows that this token login path skips the password-expiry and sandbox-mode enforcement entirely. In the recorded sequence, the user worker minted a session token, an administrator expired the password, the normal login then failed with ERROR 1862, and a raw MySQL handshake carrying the token as tidb_session_token was accepted (OK packet) - after which SELECT CURRENT_USER() executed over that connection and returned worker@%. A suspended account therefore remains fully usable by anyone holding one of its session tokens. The token is bound to the username and valid for 60 seconds, and minting requires a prior authenticated session, so there is no cross-user escalation; the defect is the bypass of the administrator's suspension control.
+
+AFFECTED PRODUCT
+
+- Product: TiDB (tidb-server)
+- Component: session-token login path (pkg/server/conn.go, pkg/privilege/privileges)
+- Version tested: v26.3.10, commit 6b4c9f9dce2118aca580a16ef49bd791f4e12b3a (binary built from the pinned source; ./bin/tidb-server -V prints "v26.3.10-dirty", Git Commit Hash 6b4c9f9dce2118aca580a16ef49bd791f4e12b3a)
+- Environment used for verification: single-node local lab, unistore storage, MySQL protocol on 127.0.0.1:4100, server configured with security.session-token-signing-cert/key
+
+VULNERABILITY DETAILS
+
+- Vulnerability class: improper authentication-state enforcement (policy check skipped on one authentication path)
+- Required privileges: possession of a session token for the target account (requires one prior successful authentication as that user)
+- Entry point: MySQL handshake with auth plugin name tidb_session_token, auth payload = the token JSON
+- Trust boundary crossed: administrator account-control (PASSWORD EXPIRE / sandbox mode) -> session-token holders
+- Root location: https://github.com/pingcap/tidb/blob/6b4c9f9dce2118aca580a16ef49bd791f4e12b3a/pkg/server/conn.go#L879-L881 (token plugin "always permitted, skips stored user plugin"); https://github.com/pingcap/tidb/blob/6b4c9f9dce2118aca580a16ef49bd791f4e12b3a/pkg/privilege/privileges/privileges.go#L630-L632 and #L721-L724 (expiry and sandbox checks skipped when the login plugin is tidb_session_token)
+- Measured effect: OK handshake and a working session (SELECT CURRENT_USER() -> worker@%) for an account in expired-password state whose normal login returned ERROR 1862
+
+ROOT CAUSE
+
+- In checkAuthPlugin, the token plugin path returns early and never reaches the standard password pipeline.
+- In the privilege verification, both the password-expiry check and the sandbox-mode check are explicitly conditional on the plugin not being tidb_session_token (the code comment states the skip is "If the user uses session token to log in"). Account locking is still enforced; expiry and sandbox are not.
+- A fresh token can be minted from any live session (SHOW SESSION_STATES), so each accepted token login renews the attacker's ability to stay logged in for as long as the account exists in that state.
+
+REPRODUCTION STEPS
+
+1. As worker: SHOW SESSION_STATES; - copy the Session_token JSON (contains username, sign-time, expire-time, signature).
+2. Admin: ALTER USER 'worker'@'%' PASSWORD EXPIRE;
+3. Control: mysql -u worker -p... -> "ERROR 1862 (HY000): Your password has expired..."
+4. Exploit: raw handshake, auth plugin tidb_session_token, auth payload = token JSON -> server returns OK.
+5. Over the same connection: SELECT CURRENT_USER(); -> worker@%.
+
+OBSERVED RESULT
+
+step 3: normal login -> ERROR 1862 (HY000): Your password has expired. To log in you must change it using a client that supports expired passwords.
+step 4: token handshake -> OK (repeated a second time -> OK again)
+step 5b: SELECT CURRENT_USER() over the token connection -> worker@%
+step 5: contrast handshake declaring mysql_native_password for the same expired account -> "ERR code=1045: Access denied for user 'worker'@'127.0.0.1' (using password: YES)"
+
+Negative control: the identical handshake sequence declaring mysql_native_password for the same expired account is denied (Access denied, using password: YES), and the normal client login shows ERROR 1862. Both controls fail while the token path succeeds, isolating the bypass to the skipped expiry/sandbox checks on the token path.
+
+Evidence transcripts (2026-09-07 re-verification against the pinned build: token mint, admin expiry, ERROR 1862 control, token handshake OK, CURRENT_USER readback, native-password contrast; the raw handshake client script is included in the gist): (See the proof-of-concept files included in this folder.)
+
+Impact:
+An administrator's PASSWORD EXPIRE (and the associated sandbox mode) does not stop holders of the account's session token from continuing to use the account with full SQL access, and each such session can mint a new token (SHOW SESSION_STATES), so the suspension never takes effect for them.
+
+- Attacker: the account owner, or anyone who captured one of the account's session tokens (each token is bound to the username and valid for 60 seconds). Minting requires one prior successful authentication as that user; no cross-user escalation was demonstrated or claimed.
+- Outcome: a suspended (expired-password) account remains fully usable - the token login returns OK and carries a working session (SELECT CURRENT_USER() returned worker@% while the normal login returned ERROR 1862). The account-control an administrator relies on after credential leaks or staff departure does not take effect for token holders, for as long as they keep refreshing tokens.
+- Preconditions on the target: the server must be configured with security.session-token-signing-cert/key (the plugin does not function without it); the attacker must hold a token minted within the last 60 seconds.
+- Evidence limits: demonstrated for the expiry/sandbox control only - account locking is still enforced on the token path (verified in code; lock bypass not claimed). Single-account, single-node lab verification; production deployments of TiProxy that rely on this plugin for connection migration are the realistic exposure scenario, and were not measured.
+
+Proof of Concept:
+(See the proof-of-concept files included in this folder.)
