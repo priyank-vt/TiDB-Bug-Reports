@@ -88,4 +88,4 @@ Internal Kubernetes service hostnames and DNS information are disclosed.
 The database password gate remains effective (no SQL execution was possible), so the impact is limited to unauthorized access to the login interface + topology disclosure.
 
 Proof of Concept:
-(See the proof-of-concept files included in this folder.)
+https://drive.google.com/file/d/1Bpr4rUNejqmeX3wXgWPegtjEFkkr7yQw/view?usp=sharing
