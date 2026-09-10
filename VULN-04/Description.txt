@@ -1,1 +1,57 @@
+Title: INFORMATION_SCHEMA.TIDB_PLAN_CACHE exposes other users' SQL text and literal parameter values to unprivileged users
 
+Weakness: Incorrect Authorization (CWE-863)
+
+Asset in Scope: TiDB product, such as TiKV, TiDB, TiFlash, PD
+
+Description:
+Prepared-statement plan caching is a performance feature, and TiDB deliberately keys cached plans per user 'for safety' so one user's cached plan is not reused for another. This report documents an information channel that defeats that isolation at the observability layer: the INFORMATION_SCHEMA.TIDB_PLAN_CACHE table, readable by any user, contains the SQL text, the executing user, and the literal parameter values of other users' cached statements.
+
+In the verification, an application user ran PREPARE/EXECUTE with the literal card number '4111-1111-1111-1111'; a second user whose only grant was USAGE then read that exact card number back from INFORMATION_SCHEMA.TIDB_PLAN_CACHE, including the PARSE_VALUES column that holds the statement's parameter literals. Applications routinely embed business data (identifiers, tokens, credentials) as literals, so this is unauthorized access to other users' query content.
+
+AFFECTED PRODUCT
+- Product: TiDB (tidb-server)
+- Component: INFORMATION_SCHEMA pseudo-table TIDB_PLAN_CACHE / CLUSTER_TIDB_PLAN_CACHE
+- Version tested: v26.3.10, commit 6b4c9f9dce2118aca580a16ef49bd791f4e12b3a
+- Environment: single-node local lab (own test data), MySQL on port 4100
+
+PRECONDITION (stated explicitly, not inflated)
+Requires tidb_enable_instance_plan_cache = ON. This is NOT the default (default OFF, verified in the same test); it is a documented cluster-wide performance option an operator enables deliberately. Exposure begins when the operator enables it.
+
+VULNERABILITY DETAILS
+- Class: Incorrect Authorization (CWE-863) on a diagnostic pseudo-table (cross-user information exposure)
+- Required privileges: any authenticated user; the reading account held GRANT USAGE ON *.* only
+- Entry point: SELECT ... FROM INFORMATION_SCHEMA.TIDB_PLAN_CACHE (and CLUSTER_TIDB_PLAN_CACHE)
+- Trust boundary crossed: user A's statement contents -> user B (zero grants)
+- Root cause: setDataFromPlanCache dumps GetInstancePlanCache().All() with no checker/hasPriv filter: https://github.com/pingcap/tidb/blob/6b4c9f9dce2118aca580a16ef49bd791f4e12b3a/pkg/executor/infoschema_reader.go#L4111-L4150 ; stored values: https://github.com/pingcap/tidb/blob/6b4c9f9dce2118aca580a16ef49bd791f4e12b3a/pkg/planner/core/plan_cache_utils.go#L659-L664
+- INFORMATION_SCHEMA SELECT bypasses GRANT checks by design (https://github.com/pingcap/tidb/blob/6b4c9f9dce2118aca580a16ef49bd791f4e12b3a/pkg/privilege/privileges/privileges.go#L184-L199), so the missing row filter is the only protection, and it is absent — unlike sibling diagnostic tables (processlist, slow query, statements summary) which gate on PROCESS.
+- The engine itself treats plan sharing across users as unsafe (plans keyed per user: https://github.com/pingcap/tidb/blob/6b4c9f9dce2118aca580a16ef49bd791f4e12b3a/pkg/planner/core/plan_cache_utils.go#L360-L397 ; privileges re-checked on EXECUTE), making the unfiltered observability table an inconsistency rather than a design choice.
+
+REPRODUCTION STEPS
+1. Admin: SET GLOBAL tidb_enable_instance_plan_cache = ON;
+2. App user: PREPARE s FROM 'SELECT card_number, note FROM payments.tokens WHERE card_number = ?'; SET @a = '4111-1111-1111-1111'; EXECUTE s USING @a;
+3. Zero-grant attacker: SELECT SQL_TEXT, PARSE_USER, PARSE_VALUES FROM INFORMATION_SCHEMA.TIDB_PLAN_CACHE;
+
+BASELINE BEHAVIOR
+With the feature off, the table is empty (verified: 0 rows). Over SQL the attacker cannot read payments.tokens at all (USAGE-only grants).
+
+OBSERVED RESULT
+SQL_TEXT: SELECT card_number, note FROM payments.tokens WHERE card_number = ?
+PARSE_USER: app
+PARSE_VALUES: "4111-1111-1111-1111"
+Negative control: with the toggle OFF the same attacker query returns 0 rows; after re-enabling and re-running the victim statement, the literal appears.
+
+Full SQL transcript:
+(See the proof-of-concept files included in this folder.)
+
+Impact:
+Any authenticated user can read other users' query text and bound parameter values while the instance plan cache is enabled. Query literals in production workloads commonly contain business data and secrets (record identifiers, card or account numbers, filter tokens); the demonstrated read recovered such a value verbatim — a card number — from another user's prepared statement.
+
+With the toggle off (the default) nothing is exposed; exposure begins when an operator enables the documented performance feature cluster-wide. This conditional state is disclosed rather than inflated.
+
+Severity per program rating: High ('Unauthorized access to sensitive information') with the non-default precondition stated.
+
+Fix guidance: filter TIDB_PLAN_CACHE/CLUSTER_TIDB_PLAN_CACHE rows by the requesting user unless the requester holds PROCESS (matching the other diagnostic tables), and consider dropping or redacting PARSE_VALUES, since parameter values are data, not plan metadata.
+
+Proof of Concept:
+(See the proof-of-concept files included in this folder.)

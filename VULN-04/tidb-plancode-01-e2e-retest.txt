@@ -1,0 +1,13 @@
+=== TIDB-IS-PLANCODE-01 E2E retest 2026-09-05T21:50:19-05:00 ===
+--- [negative control] toggle OFF -> attacker sees 0 rows ---
+rows_with_toggle_off
+0
+--- [setup] toggle ON + app user runs prepared stmt with secret literal ---
+card_number	note
+4111-1111-1111-1111	visa-corp-pool
+app_exec_exit=0
+--- exploit: zero-grant attacker reads app user's SQL text + literal ---
+*************************** 1. row ***************************
+SQL_TEXT: SELECT card_number, note FROM payments.tokens WHERE card_number = ?
+PARSE_USER: app
+PARSE_VALUES: "4111-1111-1111-1111"
