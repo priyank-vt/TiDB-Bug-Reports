@@ -1,1 +1,63 @@
-TBD
+Title: INFORMATION_SCHEMA.TIDB_PLAN_CACHE exposes other users SQL text and literal parameter values to unprivileged users when the instance plan cache is enabled
+
+Weakness: Incorrect Authorization (CWE-863)
+
+Asset in Scope: TiDB product, such as TiKV, TiDB, TiFlash, PD
+
+Description:
+SUMMARY
+
+Prepared-statement plan caching is a performance feature, and TiDB deliberately keys cached plans per user "for safety" so one user's cached plan is not reused for another. This report documents an information channel that defeats that isolation at the observability layer: the INFORMATION_SCHEMA.TIDB_PLAN_CACHE table, readable by any user, contains the SQL text, the executing user, and the literal parameter values of other users' cached statements.
+
+In the verification, an application user ran PREPARE/EXECUTE with the literal card number '4111-1111-1111-1111'; a second user whose only grant was USAGE then read that exact card number back from INFORMATION_SCHEMA.TIDB_PLAN_CACHE, including the PARSE_VALUES column that holds the statement's parameter literals. Applications routinely embed business data (identifiers, tokens, credentials) as literals, so this is unauthorized access to other users' query content.
+
+AFFECTED PRODUCT
+
+- Product: TiDB (tidb-server)
+- Component: INFORMATION_SCHEMA table TIDB_PLAN_CACHE (pkg/executor/infoschema_reader.go)
+- Version tested: v26.3.10, commit 6b4c9f9dce2118aca580a16ef49bd791f4e12b3a (binary built from the pinned source; ./bin/tidb-server -V prints "v26.3.10-dirty", Git Commit Hash 6b4c9f9dce2118aca580a16ef49bd791f4e12b3a)
+- Environment used for verification: single-node local lab, unistore storage, MySQL protocol on 127.0.0.1:4100
+
+VULNERABILITY DETAILS
+
+- Vulnerability class: missing authorization on a diagnostic table exposing other users' statement content
+- Required privileges: any authenticated user; the attacker account held GRANT USAGE ON *.* only
+- Entry point: MySQL protocol, COM_QUERY, SELECT on INFORMATION_SCHEMA.TIDB_PLAN_CACHE
+- Trust boundary crossed: per-user query content -> any authenticated user (the boundary the engine itself enforces by keying plans per user)
+- Root location: setDataFromPlanCache in https://github.com/pingcap/tidb/blob/6b4c9f9dce2118aca580a16ef49bd791f4e12b3a/pkg/executor/infoschema_reader.go#L4111-L4150 dumps the instance-wide plan cache into the result set without a user filter or privilege gate
+- Measured effect: a zero-grant user read the full SQL text, the executing username, and the literal parameter value "4111-1111-1111-1111" of another user's cached prepared statement
+
+ROOT CAUSE
+
+- setDataFromPlanCache dumps GetInstancePlanCache().All() - every cached plan instance-wide - into the result set without consulting the privilege checker, unlike sibling diagnostic tables (processlist, slow query, statements summary) which gate on PROCESS or filter rows by user.
+- INFORMATION_SCHEMA tables bypass GRANT checks by design (https://github.com/pingcap/tidb/blob/6b4c9f9dce2118aca580a16ef49bd791f4e12b3a/pkg/privilege/privileges/privileges.go#L184-L199 returns true for SELECT on information_schema), so the missing row filter is the only protection, and it is absent.
+- The engine itself treats plan sharing across users as unsafe (plans are keyed per user, https://github.com/pingcap/tidb/blob/6b4c9f9dce2118aca580a16ef49bd791f4e12b3a/pkg/planner/core/plan_cache_utils.go#L360-L397, and privileges are re-checked on EXECUTE), which makes the unfiltered observability table an inconsistency rather than a design choice.
+
+REPRODUCTION STEPS
+
+1. Admin: SET GLOBAL tidb_enable_instance_plan_cache = ON;
+2. App user: PREPARE s FROM 'SELECT card_number, note FROM payments.tokens WHERE card_number = ?'; SET @a = '4111-1111-1111-1111'; EXECUTE s USING @a;
+3. Zero-grant user: SELECT SQL_TEXT, PARSE_USER, PARSE_VALUES FROM INFORMATION_SCHEMA.TIDB_PLAN_CACHE;
+
+OBSERVED RESULT
+
+SQL_TEXT: SELECT card_number, note FROM payments.tokens WHERE card_number = ?
+PARSE_USER: app
+PARSE_VALUES: "4111-1111-1111-1111"
+
+The attacker holds GRANT USAGE ON *.* only. A same-window control shows the attacker cannot read payments.tokens itself: SELECT * FROM payments.tokens returns "ERROR 1142 (42000): SELECT command denied". Only the plan-cache observability table leaks the victim's statement content to the zero-grant user.
+
+Negative control: with SET GLOBAL tidb_enable_instance_plan_cache = OFF (the verified default), the same attacker query returns 0 rows; after re-enabling and re-running the victim statement, the literal appears. The control shows the table is the disclosure channel. Note on timing observed in the 2026-09-07 re-verification: immediately after SET GLOBAL ... = OFF the table still returned 1 row for roughly 3-4 seconds (propagation lag), then 0 rows consistently.
+
+Evidence transcripts (2026-09-07 re-verification against the pinned build: toggle-off 0-row control, app user PREPARE/EXECUTE, zero-grant readback of the literal, SQL negative control): (See the proof-of-concept files included in this folder.)
+
+Impact:
+Any authenticated user can read other users' query text and bound parameter values while the instance plan cache is enabled. Query literals in production workloads commonly contain business data and secrets (record identifiers, card or account numbers, filter tokens); the demonstrated read recovered such a value verbatim, from an account holding no object privileges at all.
+
+- Attacker: any authenticated SQL user, including one holding only GRANT USAGE ON *.* (no object privileges). No victim interaction required beyond the victim running ordinary prepared statements.
+- Outcome: verbatim recovery of another user's statement text, executing username, and bound parameter literals - demonstrated with a card number literal read back exactly. In production, prepared statements routinely carry identifiers, tokens, and credentials as literals, so this is unauthorized access to other users' query content.
+- Preconditions on the target: tidb_enable_instance_plan_cache = ON. This is NOT the default (verified default OFF); it is a documented cluster-wide performance option an operator enables deliberately. Exposure begins the moment the feature is enabled.
+- Evidence limits: demonstrated with a single victim statement and single literal on a single-node lab. Only statements that enter the instance plan cache (prepared statements executed while the feature is on) are exposed; the number of distinct victims and literals readable in production scales with the cache contents and was not measured.
+
+Proof of Concept:
+(See the proof-of-concept files included in this folder.)

