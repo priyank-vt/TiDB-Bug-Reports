@@ -1,1 +1,77 @@
-TBD
+Title: Unauthenticated single-request remote denial of service of tikv-server through reachable panics in gRPC handlers
+
+Weakness: Improper Check or Handling of Exceptional Conditions (CWE-703)
+
+Asset in Scope: TiDB product, such as TiKV, TiDB, TiFlash, PD
+
+Description:
+Unauthenticated single-request remote denial of service of tikv-server through reachable panics in gRPC handlers.
+
+SUMMARY
+TiKV is the key-value storage engine of a TiDB cluster. It listens on a peer-facing gRPC port (default 20160) that, in an unauthenticated deployment, any host that can reach the port can talk to. One security boundary is supposed to hold regardless: a malformed or unusual request must fail as a single failed RPC — it must never take the whole storage process down.
+
+That boundary does not hold. TiKV installs a process-wide panic hook that terminates the entire process on any Rust panic, and none of its request-handling paths contain catch_unwind. At the same time, the gRPC surface contains several handler bodies implemented as unimplemented!(), assert! statements that run before any validation, and request fields whose values are fed into panicking conversions and decoders. A single ordinary gRPC request from an unauthenticated peer therefore deterministically terminates tikv-server.
+
+AFFECTED PRODUCT
+- Product: TiKV
+- Version tested: 8.5.8, commit a1fdd6a59bb9c8a282c15677e1894501a52425cf (built from that source, default profile; default configuration — no TLS, no authentication; startup config dump confirmed security empty, abort-on-panic false, api-version 1)
+- Environment: isolated local lab — one pd-server built from the pinned PD sources plus one tikv-server, loopback only; client = grpcurl with the kvproto definitions this version pins (kvproto @ 07aa8c6)
+
+VULNERABILITY DETAILS
+- Weakness: uncaught panics terminate the whole process (CWE-248 Uncaught Exception, with reachable assertions CWE-617); manifests as CWE-400 availability failure. The dropdown's closest entry is CWE-703, hence the selection.
+- Entry points: tikvpb.Tikv/* and import_sstpb.ImportSST/* gRPC methods on port 20160
+- Root cause part 1 — any panic kills the process: the hook ends with process::abort() or libc::_exit(1):
+  https://github.com/tikv/tikv/blob/a1fdd6a59bb9c8a282c15677e1894501a52425cf/components/tikv_util/src/lib.rs#L444-L516 (installed at https://github.com/tikv/tikv/blob/a1fdd6a59bb9c8a282c15677e1894501a52425cf/components/server/src/common.rs#L120)
+- Root cause part 2 — reachable panics, all verified with a FATAL log line naming the site and process exit 1:
+  1. src/server/service/kv.rs:469-471,1086-1120 — five handler bodies: unimplemented!() (KvImport, BatchCoprocessor, DispatchMPPTask, CancelMPPTask, EstablishMPPConnection)
+  2. src/server/service/kv.rs:1443-1448 — batch_commands Cmd::Import arm: unimplemented!()
+  3. src/server/service/kv.rs:636-647 — UnsafeDestroyRange assert on empty start_key/end_key
+  4. src/coprocessor/endpoint.rs:346 — ANALYZE TypeSampleIndex: unimplemented!()
+  5. src/storage/raw/store.rs:63-66 — RawGetKeyTTL panics on an api-version 1 store
+  6. components/txn_types/src/types.rs:524 — prewrite mutation Op mismatch
+  7. src/storage/txn/commands/mod.rs:219-226 — pessimistic-lock mutation Op mismatch
+  8. src/storage/txn/commands/mod.rs:370-375 — ResolveLock zero start_ts assert
+  9. components/txn_types/src/timestamp.rs:45-50 — TimeStamp::next() assert via client start_ts=u64::MAX (KvFlush; async-commit prewrite)
+  10. components/tidb_query_datatype/src/codec/mysql/json/jcodec.rs:245-250 — JSON constant decode slice
+  11. src/coprocessor/statistics/analyze.rs:176-190 — ANALYZE full-sampling column_offsets out-of-bounds index
+  12. components/sst_importer/src/sst_importer.rs:1550-1560 — Download with unknown column-family name (unwrap)
+  13. components/tikv_util/src/codec/stream_event.rs:68-90 — Apply of a malformed KV file (slice with an attacker-controlled u32 length)
+  All files are in the same pinned commit; e.g. https://github.com/tikv/tikv/blob/a1fdd6a59bb9c8a282c15677e1894501a52425cf/src/server/service/kv.rs#L469-L471
+
+REPRODUCTION (example — the full 18-request table with exact payloads is in the PoC gist)
+1. Build TiKV at the pinned commit; start one pd-server and one tikv-server with default (unauthenticated) configuration; confirm the store serves on port 20160.
+2. grpcurl -plaintext -import-path $KVPROTO/proto -import-path $KVPROTO/include -proto tikvpb.proto -d '{}' 127.0.0.1:20160 tikvpb.Tikv/KvImport
+3. The tikv-server process exits with code 1; the server log records:
+   [FATAL] [lib.rs:479] ["not implemented"] [backtrace="... <Tikv>::kv_import ..."] [location=src/server/service/kv.rs:470] [thread_name=grpc-server-0]
+Determinism: the KvImport request was executed twice on independent server instances; both exited (2/2). Every other trigger above was verified the same way (process exit 1 + FATAL line at the listed site), e.g.:
+- UnsafeDestroyRange empty keys -> "assertion failed: !req.get_start_key().is_empty()" (kv.rs:646)
+- RawGetKeyTTL -> "get ttl on non-ttl store" (raw/store.rs:65)
+- KvPrewrite with mutations[0].op=Rollback -> "mismatch Op in prewrite mutations" (txn_types/types.rs:524)
+- KvResolveLock start_version=0 -> "assertion failed: !start_ts.is_zero()" (commands/mod.rs:373)
+- KvFlush / async-commit prewrite with start_ts=u64::MAX -> "assertion failed: self.0 < u64::MAX" (txn_types/timestamp.rs:48)
+- ImportSST/Apply of a malformed KV file -> "range end index 4294967299 out of range for slice of length 8" (stream_event.rs:80)
+- Coprocessor ANALYZE full-sampling column_offsets=[1000] -> "index out of bounds: the len is 2 but the index is 1000" (analyze.rs:187)
+
+NEGATIVE CONTROLS (predicted-but-absent crashes, tested; the server survived all — the sweep was not confirmation-biased)
+- BatchCommands empty request with delay_time=u64::MAX (the Instant+Duration addition cannot overflow from u64 milliseconds)
+- A 300,000-level nested JSON constant (the recursion is evaluation-time; the scan produced zero rows in this topology)
+- Debug/InjectFailPoint with actions:"panic" (fail-points are compiled out of this build)
+- Uncompress with a declared 4 GiB length; a cast of invalid UTF-8 bytes to JSON (the evaluation path was not reached)
+All recorded in the PoC gist.
+
+Note: no DoS testing was performed against any live infrastructure; all reproduction was on an isolated local lab built from the pinned sources.
+
+Impact:
+Any unauthenticated network peer that can open a TCP connection to a store's gRPC port can terminate tikv-server with a single request. All data service on the affected store stops until an operator restarts it, and repeated requests keep it down. TiKV is a core TiDB component; on a multi-store cluster an attacker who can reach each store's port can take the cluster'sport down store by store.
+
+Measured effect (all on a server built from the pinned source, version 8.5.8 commit a1fdd6a59bb9c8a282c15677e1894501a52425cf):
+- 18 distinct single-request triggers, each deterministically exiting the process with code 1 and logging a FATAL line naming the exact panic site (five unimplemented!() handler bodies, three assert-based pre-validation crashes, panicking request-data conversions in prewrite/pessimistic-lock/resolve-lock/flush paths, an out-of-bounds index in ANALYZE, a slice panic decoding a JSON constant, and two import-service parse/conversion panics).
+- The flagship trigger (KvImport) was executed twice on independent server instances and killed the server both times (2/2).
+- Five predicted-but-absent crashes were tested and did not occur (recorded as negative controls), so the count is not inflated by unverified predictions.
+
+Evidence limits: measured on the default (unauthenticated) deployment in an isolated lab; availability-only impact — no data corruption, disclosure, or code execution is claimed for this finding. Severity mapping follows the program's criteria, which rate "DoS affecting core system services ... make a TiDB component unavailable" as Critical.
+
+Remediation: return UNIMPLEMENTED statuses instead of unimplemented!() panics; move assert!/unwrap validation into checked request validation returning INVALID_ARGUMENT; convert panicking request-data conversions into Result checks; add per-request catch_unwind containment as defense in depth.
+
+Proof of Concept:
+(See the proof-of-concept files included in this folder.)

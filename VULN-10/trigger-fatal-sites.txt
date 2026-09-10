@@ -1,0 +1,58 @@
+Each line below = ONE unauthenticated gRPC request; the server process exited (code 1) with this FATAL line.
+
+* KvImport {}
+-> [2026/09/06 00:51:52.196 -05:00] [FATAL] [lib.rs:479] ["not implemented"] [
+-> location: src/server/service/kv.rs:470
+* BatchCommands {requests:[{Import:{}}],request_ids:[1]}
+-> [2026/09/06 00:53:14.081 -05:00] [FATAL] [lib.rs:479] ["not implemented"] [
+-> location: src/server/service/kv.rs:1448
+* UnsafeDestroyRange {context:{},start_key:'',end_key:''}
+-> [2026/09/06 00:54:51.736 -05:00] [FATAL] [lib.rs:479] ["assertion failed: !req.get_start_key().is_empty()"] [
+-> location: src/server/service/kv.rs:646 (assert)
+* Coprocessor tp=104, AnalyzeReq.tp=TypeSampleIndex
+-> [2026/09/06 01:05:14.138 -05:00] [FATAL] [lib.rs:479] ["not implemented"] [
+-> location: src/coprocessor/endpoint.rs:346
+* RawGetKeyTTL on api-version=1 store
+-> [2026/09/06 01:07:24.298 -05:00] [FATAL] [lib.rs:479] ["get ttl on non-ttl store"] [
+-> location: src/storage/raw/store.rs:65
+* KvPrewrite mutations[0].op=Rollback
+-> [2026/09/06 01:08:20.132 -05:00] [FATAL] [lib.rs:479] ["mismatch Op in prewrite mutations"] [
+-> location: components/txn_types/src/types.rs:524
+* KvResolveLock start_version=0 with keys
+-> [2026/09/06 01:09:21.195 -05:00] [FATAL] [lib.rs:479] ["assertion failed: !start_ts.is_zero()"] [
+-> location: src/storage/txn/commands/mod.rs:373 (assert)
+* KvFlush start_ts=u64::MAX, generation=1
+-> [2026/09/06 01:12:23.669 -05:00] [FATAL] [lib.rs:479] ["assertion failed: self.0 < u64::MAX"] [
+-> location: components/txn_types/src/timestamp.rs:48 (assert)
+* KvPessimisticLock mutations[0].op=Put
+-> [2026/09/07 02:46:57.881 -05:00] [FATAL] [lib.rs:479] ["mismatch Op in pessimistic lock mutations"] [
+-> location: src/storage/txn/commands/mod.rs:225
+* KvPrewrite start_ts=u64::MAX use_async_commit=true
+-> [2026/09/07 02:58:31.413 -05:00] [FATAL] [lib.rs:479] ["assertion failed: self.0 < u64::MAX"] [
+-> location: components/txn_types/src/timestamp.rs:48 (assert)
+* ImportSST/Apply malformed KV file (u32 key length 0xFFFFFFFF)
+-> [2026/09/07 02:59:56.798 -05:00] [FATAL] [lib.rs:479] ["range end index 4294967299 out of range for slice of length 8"] [
+-> location: components/tikv_util/src/codec/stream_event.rs:80
+* ImportSST/Download sst.cf_name='bogus' with rewrite rule
+-> [2026/09/07 03:00:44.623 -05:00] [FATAL] [lib.rs:479] ["called `Option::unwrap()` on a `None` value"] [
+-> location: components/sst_importer/src/sst_importer.rs:1554 (unwrap)
+* BatchCoprocessor {}
+-> [2026/09/07 02:51:54.325 -05:00] [FATAL] [lib.rs:479] ["not implemented"] [
+-> location: src/server/service/kv.rs:1092
+* DispatchMPPTask {}
+-> [2026/09/07 02:52:37.821 -05:00] [FATAL] [lib.rs:479] ["not implemented"] [
+-> location: src/server/service/kv.rs:1101
+* CancelMPPTask {}
+-> [2026/09/07 02:53:18.350 -05:00] [FATAL] [lib.rs:479] ["not implemented"] [
+-> location: src/server/service/kv.rs:1110
+* EstablishMPPConnection {}
+-> [2026/09/07 02:54:01.837 -05:00] [FATAL] [lib.rs:479] ["not implemented"] [
+-> location: src/server/service/kv.rs:1119
+* Coprocessor DAG: JsonDepthSig over 1-byte MysqlJson constant
+-> [2026/09/07 02:27:38.656 -05:00] [FATAL] [lib.rs:479] ["range start index 4 out of range for slice of length 0"] [
+-> location: components/tidb_query_datatype/src/codec/mysql/json/jcodec.rs:247
+* Coprocessor ANALYZE TypeFullSampling column_offsets=[1000]
+-> [2026/09/07 02:19:05.484 -05:00] [FATAL] [lib.rs:479] ["index out of bounds: the len is 2 but the index is 1000"] [
+-> location: src/coprocessor/statistics/analyze.rs:187 (index out of bounds)
+
+Determinism: the KvImport trigger was executed twice on independent server instances; both exited (2/2).

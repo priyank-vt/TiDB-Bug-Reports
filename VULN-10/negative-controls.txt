@@ -1,0 +1,15 @@
+Predicted-but-absent crashes, tested: server survived in all cases.
+
+* BatchCommands Empty delay_time=u64::MAX (Instant overflow candidate)
+
+* 300k-level nested JSON constant (recursion candidate)
+SERVER_ALIVE pid=389815
+
+* Debug/InjectFailPoint actions='panic' (fail-point candidate)
+SERVER_ALIVE pid=355922
+
+* Uncompress with declared 4 GiB length
+SERVER_ALIVE pid=372800
+
+* CastStringAsJson over invalid UTF-8 bytes
+SERVER_ALIVE pid=372800

@@ -1,0 +1,11 @@
+request: tikvpb.Tikv/KvImport payload: {}
+
+--- client request ---
+grpcurl -plaintext -import-path <kvproto>/proto -import-path <kvproto>/include -proto tikvpb.proto -d '{}' 127.0.0.1:20160 tikvpb.Tikv/KvImport
+grpcurl_exit=78
+--- process state after request ---
+SERVER_EXITED pid=1340942
+exit_code=1
+
+--- server FATAL ---
+[2026/09/06 00:51:52.196 -05:00] [FATAL] [lib.rs:479] ["not implemented"] [
