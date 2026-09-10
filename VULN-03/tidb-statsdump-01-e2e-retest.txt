@@ -1,0 +1,56 @@
+=== TIDB-STATSDUMP-01 E2E retest 2026-09-05T21:49:55-05:00 ===
+--- [negative control] zero-grant attacker via SQL is DENIED table access ---
+--------------
+SELECT COUNT(*) FROM fintech.accounts
+--------------
+
+ERROR 1142 (42000) at line 1: SELECT command denied to user 'attacker'@'%' for table 'accounts'
+--- anonymous HTTP stats dump of the same table ---
+HTTP 200, 7137 bytes
+--- decode TopN datums (actual stored values) ---
+python3: can't open file 'evidence/tidb/L3-stats-dump/decode_topn.py': [Errno 2] No such file or directory
+--- decoded value count ---
+python3: can't open file 'evidence/tidb/L3-stats-dump/decode_topn.py': [Errno 2] No such file or directory
+0
+acct_no = b'AAAA-BBBB-0001'
+acct_no = b'AAAA-BBBB-0002'
+acct_no = b'AAAA-BBBB-0003'
+acct_no = b'AAAA-BBBB-0004'
+acct_no = b'AAAA-BBBB-0005'
+acct_no = b'AAAA-BBBB-0006'
+acct_no = b'AAAA-BBBB-0007'
+acct_no = b'AAAA-BBBB-0008'
+acct_no = b'AAAA-BBBB-0009'
+acct_no = b'AAAA-BBBB-0010'
+balance = b'\x0c\x02\x80\x00\x00\x00\x0fK'
+balance = b'\x0c\x02\x80\x00\x00\x00M\x19'
+balance = b'\x0c\x02\x80\x00\x00\x02+7'
+balance = b'\x0c\x02\x80\x00\x00\x02\x80c'
+balance = b'\x0c\x02\x80\x00\x00\x05\xdc'
+balance = b'\x0c\x02\x80\x00\x00\x10\xcc\n'
+balance = b'\x0c\x02\x80\x00\x00 \x81'
+balance = b'\x0c\x02\x80\x00\x00#\xf02'
+balance = b'\x0c\x02\x80\x00\x00+\xf2'
+balance = b'\x0c\x02\x80\x00\x0fB?c'
+email = b'alice.cooper@example-corp.com'
+email = b'bob.marley@example-corp.com'
+email = b'carol.danvers@example-corp.com'
+email = b'dave.mustaine@example-corp.com'
+email = b'erin.brockovich@example-corp.com'
+email = b'frank.ocean@example-corp.com\x00\x00\x00\x00\xfb'
+email = b'grace.hopper@example-corp.com'
+email = b'heath.ledger@example-corp.com'
+email = b'ivan.drago@example-corp.com'
+email = b'julia.roberts@example-corp.com'
+id = b'\x80\x00\x00\x00\x00\x00\x00\x01'
+id = b'\x80\x00\x00\x00\x00\x00\x00\x02'
+id = b'\x80\x00\x00\x00\x00\x00\x00\x03'
+id = b'\x80\x00\x00\x00\x00\x00\x00\x04'
+id = b'\x80\x00\x00\x00\x00\x00\x00\x05'
+id = b'\x80\x00\x00\x00\x00\x00\x00\x06'
+id = b'\x80\x00\x00\x00\x00\x00\x00\x07'
+id = b'\x80\x00\x00\x00\x00\x00\x00\x08'
+id = b'\x80\x00\x00\x00\x00\x00\x00\t'
+id = b'\x80\x00\x00\x00\x00\x00\x00\n'
+--- decoded value count ---
+40

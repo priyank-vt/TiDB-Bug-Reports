@@ -1,1 +1,55 @@
+Title: Unauthenticated TiDB status API /stats/dump endpoint returns actual table data values from any schema
 
+Weakness: Missing Authentication for Critical Function (CWE-306)
+
+Asset in Scope: TiDB product, such as TiKV, TiDB, TiFlash, PD
+
+Description:
+TiDB runs an HTTP status API on its own port (default 10080) for monitoring and internal diagnostics. Deployment documentation treats this port as an internal interface, but the product itself performs no authentication on it, so anyone who can reach the port from the network is inside a trust boundary the SQL layer normally guards: seeing table contents only with the right grants.
+
+This report shows that one endpoint of that API, GET /stats/dump/{db}/{table}, returns the table's statistics document, whose TopN and histogram entries are the database's own stored values, base64-encoded. Requesting the endpoint for a seeded test table with no credentials at all returned HTTP 200 and enough information to decode all ten account numbers, all ten full email addresses, and the corresponding balances of that table — values the SQL layer denies to users without grants. The same endpoint accepts any schema, including mysql.
+
+AFFECTED PRODUCT
+- Product: TiDB (tidb-server)
+- Component: HTTP status API, statistics dump handler
+- Version tested: v26.3.10, commit 6b4c9f9dce2118aca580a16ef49bd791f4e12b3a
+- Environment: single-node local lab (own test data), status API on 127.0.0.1:10180, MySQL on 4100
+
+VULNERABILITY DETAILS
+- Class: Missing Authentication for Critical Function (CWE-306) — unauthorized information disclosure
+- Required privileges: none — plain HTTP GET, no credentials, no token
+- Entry point: GET /stats/dump/{db}/{table} and GET /stats/dump/{db}/{table}/{snapshot} (historical variant)
+- Root cause: the status router registers data-bearing handlers with no auth wrapper — route /stats/dump/{db}/{table} -> newStatsHandler(): https://github.com/pingcap/tidb/blob/6b4c9f9dce2118aca580a16ef49bd791f4e12b3a/pkg/server/http_status.go#L224-L226 (handler: pkg/server/handler/optimizor/stats_handler.go)
+- The statistics document contains cm_sketch.top_n[].data and histogram bucket bounds in TiDB's datum encoding — plain base64 of the real stored values (kind byte + raw value bytes), not hashes or sketches that resist decoding.
+- The SQL privilege layer is bypassed entirely: an unauthenticated HTTP peer reads what GRANT SELECT would deny over SQL.
+
+REPRODUCTION STEPS
+1. (data owner side, own test data) create fintech.accounts with email/account/balance columns, insert 10 rows, run ANALYZE TABLE accounts WITH 4 BUCKETS;
+2. From a host with no SQL credentials: curl -s http://<host>:10080/stats/dump/fintech/accounts -o dump.json
+3. Decode: base64-decode cm_sketch.top_n[].data, strip the datum kind byte and padding (decoder script in the evidence gist).
+
+BASELINE BEHAVIOR
+Over SQL, a user without SELECT on the table receives ERROR 1142 (42000): SELECT command denied. Statistics metadata itself is exposed in INFORMATION_SCHEMA but without stored values.
+
+OBSERVED RESULT
+HTTP 200, 7137 bytes; decoded values (40 total):
+acct_no = AAAA-BBBB-0001 ... AAAA-BBBB-0010
+email = alice.cooper@example-corp.com ... julia.roberts@example-corp.com (10/10 full addresses)
+balance = decimal datums of the real balances
+Negative control in the same window: the zero-grant SQL user got ERROR 1142 for the same table while the anonymous HTTP fetch returned HTTP 200.
+Also: GET /stats/dump/mysql/user after an admin ANALYZE returns usernames of all accounts (auth_string is skipped by ANALYZE, so password hashes do not appear).
+
+Full transcript, raw dump and decoder:
+(See the proof-of-concept files included in this folder.)
+
+Impact:
+Any host that can reach the status port reads real stored values (the most frequent values and histogram bounds of analyzed columns) of any table in any schema, without an account. With typical indexed business columns (emails, account numbers, identifiers), this is unauthorized access to sensitive user data.
+
+The leak is limited to values captured in statistics (TopN entries and bucket bounds), not an arbitrary full-table read; row-level exhaustive extraction was not demonstrated and is not claimed.
+
+This matches the program's High rating for 'Unauthorized access to sensitive information'.
+
+Fix guidance: require authentication for /stats/dump (and the status API's data-bearing endpoints generally) or bind them to loopback/cluster-internal interfaces by default; offer a redacted dump mode (counts and metadata without datum values); keep SQL-side privilege symmetry (reading another schema's statistics should require at least SELECT on that schema).
+
+Proof of Concept:
+(See the proof-of-concept files included in this folder.)

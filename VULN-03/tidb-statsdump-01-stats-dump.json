@@ -1,0 +1,165 @@
+{
+  "columns": {
+    "acct_no": {
+      "histogram": {
+        "ndv": 10
+      },
+      "cm_sketch": {
+        "top_n": [
+          { "data": "AUFBQUEtQkJC/0ItMDAwMQAA/Q==", "count": 1 },
+          { "data": "AUFBQUEtQkJC/0ItMDAwMgAA/Q==", "count": 1 },
+          { "data": "AUFBQUEtQkJC/0ItMDAwMwAA/Q==", "count": 1 },
+          { "data": "AUFBQUEtQkJC/0ItMDAwNAAA/Q==", "count": 1 },
+          { "data": "AUFBQUEtQkJC/0ItMDAwNQAA/Q==", "count": 1 },
+          { "data": "AUFBQUEtQkJC/0ItMDAwNgAA/Q==", "count": 1 },
+          { "data": "AUFBQUEtQkJC/0ItMDAwNwAA/Q==", "count": 1 },
+          { "data": "AUFBQUEtQkJC/0ItMDAwOAAA/Q==", "count": 1 },
+          { "data": "AUFBQUEtQkJC/0ItMDAwOQAA/Q==", "count": 1 },
+          { "data": "AUFBQUEtQkJC/0ItMDAxMAAA/Q==", "count": 1 }
+        ],
+        "default_value": 0
+      },
+      "fm_sketch": null,
+      "stats_ver": 2,
+      "null_count": 0,
+      "tot_col_size": 150,
+      "last_update_version": 468886676058144768,
+      "correlation": 1
+    },
+    "balance": {
+      "histogram": { "ndv": 10 },
+      "cm_sketch": {
+        "top_n": [
+          { "data": "BgwCgAAAAA9L", "count": 1 },
+          { "data": "BgwCgAAAAE0Z", "count": 1 },
+          { "data": "BgwCgAAAAis3", "count": 1 },
+          { "data": "BgwCgAAAAoBj", "count": 1 },
+          { "data": "BgwCgAAABdwA", "count": 1 },
+          { "data": "BgwCgAAAEMwK", "count": 1 },
+          { "data": "BgwCgAAAIIEA", "count": 1 },
+          { "data": "BgwCgAAAI/Ay", "count": 1 },
+          { "data": "BgwCgAAAK/IA", "count": 1 },
+          { "data": "BgwCgAAPQj9j", "count": 1 }
+        ],
+        "default_value": 0
+      },
+      "fm_sketch": null,
+      "stats_ver": 2,
+      "null_count": 0,
+      "tot_col_size": 80,
+      "last_update_version": 468886676058144768,
+      "correlation": -0.09090909090909091
+    },
+    "email": {
+      "histogram": { "ndv": 10 },
+      "cm_sketch": {
+        "top_n": [
+          { "data": "AWFsaWNlLmNv/29wZXJAZXhh/21wbGUtY29y/3AuY29tAAAA/A==", "count": 1 },
+          { "data": "AWJvYi5tYXJs/2V5QGV4YW1w/2xlLWNvcnAu/2NvbQAAAAAA+g==", "count": 1 },
+          { "data": "AWNhcm9sLmRh/252ZXJzQGV4/2FtcGxlLWNv/3JwLmNvbQAA/Q==", "count": 1 },
+          { "data": "AWRhdmUubXVz/3RhaW5lQGV4/2FtcGxlLWNv/3JwLmNvbQAA/Q==", "count": 1 },
+          { "data": "AWVyaW4uYnJv/2Nrb3ZpY2hA/2V4YW1wbGUt/2NvcnAuY29t/wAAAAAAAAAA9w==", "count": 1 },
+          { "data": "AWZyYW5rLm9j/2VhbkBleGFt/3BsZS1jb3Jw/y5jb20AAAAA+w==", "count": 1 },
+          { "data": "AWdyYWNlLmhv/3BwZXJAZXhh/21wbGUtY29y/3AuY29tAAAA/A==", "count": 1 },
+          { "data": "AWhlYXRoLmxl/2RnZXJAZXhh/21wbGUtY29y/3AuY29tAAAA/A==", "count": 1 },
+          { "data": "AWl2YW4uZHJh/2dvQGV4YW1w/2xlLWNvcnAu/2NvbQAAAAAA+g==", "count": 1 },
+          { "data": "AWp1bGlhLnJv/2JlcnRzQGV4/2FtcGxlLWNv/3JwLmNvbQAA/Q==", "count": 1 }
+        ],
+        "default_value": 0
+      },
+      "fm_sketch": null,
+      "stats_ver": 2,
+      "null_count": 0,
+      "tot_col_size": 301,
+      "last_update_version": 468886676058144768,
+      "correlation": 1
+    },
+    "id": {
+      "histogram": { "ndv": 10 },
+      "cm_sketch": {
+        "top_n": [
+          { "data": "A4AAAAAAAAAB", "count": 1 },
+          { "data": "A4AAAAAAAAAC", "count": 1 },
+          { "data": "A4AAAAAAAAAD", "count": 1 },
+          { "data": "A4AAAAAAAAAE", "count": 1 },
+          { "data": "A4AAAAAAAAAF", "count": 1 },
+          { "data": "A4AAAAAAAAAG", "count": 1 },
+          { "data": "A4AAAAAAAAAH", "count": 1 },
+          { "data": "A4AAAAAAAAAI", "count": 1 },
+          { "data": "A4AAAAAAAAAJ", "count": 1 },
+          { "data": "A4AAAAAAAAAK", "count": 1 }
+        ],
+        "default_value": 0
+      },
+      "fm_sketch": null,
+      "stats_ver": 2,
+      "null_count": 0,
+      "tot_col_size": 10,
+      "last_update_version": 468886676058144768,
+      "correlation": 1
+    }
+  },
+  "indices": {
+    "idx_acct": {
+      "histogram": { "ndv": 10 },
+      "cm_sketch": {
+        "top_n": [
+          { "data": "AUFBQUEtQkJC/0ItMDAwMQAA/Q==", "count": 1 },
+          { "data": "AUFBQUEtQkJC/0ItMDAwMgAA/Q==", "count": 1 },
+          { "data": "AUFBQUEtQkJC/0ItMDAwMwAA/Q==", "count": 1 },
+          { "data": "AUFBQUEtQkJC/0ItMDAwNAAA/Q==", "count": 1 },
+          { "data": "AUFBQUEtQkJC/0ItMDAwNQAA/Q==", "count": 1 },
+          { "data": "AUFBQUEtQkJC/0ItMDAwNgAA/Q==", "count": 1 },
+          { "data": "AUFBQUEtQkJC/0ItMDAwNwAA/Q==", "count": 1 },
+          { "data": "AUFBQUEtQkJC/0ItMDAwOAAA/Q==", "count": 1 },
+          { "data": "AUFBQUEtQkJC/0ItMDAwOQAA/Q==", "count": 1 },
+          { "data": "AUFBQUEtQkJC/0ItMDAxMAAA/Q==", "count": 1 }
+        ],
+        "default_value": 0
+      },
+      "fm_sketch": null,
+      "stats_ver": 2,
+      "null_count": 0,
+      "tot_col_size": 0,
+      "last_update_version": 468886676058144768,
+      "correlation": 0
+    },
+    "idx_email": {
+      "histogram": { "ndv": 10 },
+      "cm_sketch": {
+        "top_n": [
+          { "data": "AWFsaWNlLmNv/29wZXJAZXhh/21wbGUtY29y/3AuY29tAAAA/A==", "count": 1 },
+          { "data": "AWJvYi5tYXJs/2V5QGV4YW1w/2xlLWNvcnAu/2NvbQAAAAAA+g==", "count": 1 },
+          { "data": "AWNhcm9sLmRh/252ZXJzQGV4/2FtcGxlLWNv/3JwLmNvbQAA/Q==", "count": 1 },
+          { "data": "AWRhdmUubXVz/3RhaW5lQGV4/2FtcGxlLWNv/3JwLmNvbQAA/Q==", "count": 1 },
+          { "data": "AWVyaW4uYnJv/2Nrb3ZpY2hA/2V4YW1wbGUt/2NvcnAuY29t/wAAAAAAAAAA9w==", "count": 1 },
+          { "data": "AWZyYW5rLm9j/2VhbkBleGFt/3BsZS1jb3Jw/y5jb20AAAAA+w==", "count": 1 },
+          { "data": "AWdyYWNlLmhv/3BwZXJAZXhh/21wbGUtY29y/3AuY29tAAAA/A==", "count": 1 },
+          { "data": "AWhlYXRoLmxl/2RnZXJAZXhh/21wbGUtY29y/3AuY29tAAAA/A==", "count": 1 },
+          { "data": "AWl2YW4uZHJh/2dvQGV4YW1w/2xlLWNvcnAu/2NvbQAAAAAA+g==", "count": 1 },
+          { "data": "AWp1bGlhLnJv/2JlcnRzQGV4/2FtcGxlLWNv/3JwLmNvbQAA/Q==", "count": 1 }
+        ],
+        "default_value": 0
+      },
+      "fm_sketch": null,
+      "stats_ver": 2,
+      "null_count": 0,
+      "tot_col_size": 0,
+      "last_update_version": 468886676058144768,
+      "correlation": 0
+    }
+  },
+  "partitions": null,
+  "database_name": "fintech",
+  "table_name": "accounts",
+  "predicate_columns": [
+    { "last_used_at": null, "last_analyzed_at": "2026-09-06 02:12:01", "id": 4 },
+    { "last_used_at": null, "last_analyzed_at": "2026-09-06 02:12:01", "id": 1 },
+    { "last_used_at": null, "last_analyzed_at": "2026-09-06 02:12:01", "id": 2 },
+    { "last_used_at": null, "last_analyzed_at": "2026-09-06 02:12:01", "id": 3 }
+  ],
+  "count": 20,
+  "modify_count": 10,
+  "version": 468886696748646400,
+  "is_historical_stats": false
+}
