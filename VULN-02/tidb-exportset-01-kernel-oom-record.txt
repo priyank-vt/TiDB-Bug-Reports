@@ -1,0 +1,5 @@
+Sep 05 21:32:09 kali kernel: chrome invoked oom-killer: gfp_mask=0x140cca(GFP_HIGHUSER_MOVABLE|__GFP_COMP), order=0, oom_score_adj=300
+Sep 05 21:32:09 kali kernel:  oom_kill_process.cold+0xa/0xb7
+Sep 05 21:32:09 kali kernel: [  pid  ]   uid  tgid total_vm      rss rss_anon rss_file rss_shmem pgtables_bytes swapents oom_score_adj name
+Sep 05 21:32:09 kali kernel: oom-kill:constraint=CONSTRAINT_NONE,nodemask=(null),cpuset=user.slice,mems_allowed=0,global_oom,task_memcg=/user.slice/user-1000.slice/user@1000.service/app.slice/app-zcode-8897.scope,task=tidb-server,pid=1046625,uid=1000
+Sep 05 21:32:09 kali kernel: Out of memory: Killed process 1046625 (tidb-server) total-vm:60604112kB, anon-rss:28667288kB, file-rss:0kB, shmem-rss:240kB, UID:1000 pgtables:90672kB oom_score_adj:0

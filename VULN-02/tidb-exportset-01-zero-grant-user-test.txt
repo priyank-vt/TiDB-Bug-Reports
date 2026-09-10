@@ -1,0 +1,9 @@
+=== zero-grant user (attacker, USAGE only) runs the same EXPORT_SET ===
+SHOW GRANTS:
+Grants for attacker@%
+GRANT USAGE ON *.* TO 'attacker'@'%'
+RSS_before_KB: 237036
+result_len
+2113929280
+mysql_exit=0
+RSS_after_KB: 13700264
